@@ -8,8 +8,10 @@ import type { StdFee } from '@interchainjs/types'
 import type { EncodeObject } from '@cosmjs/proto-signing'
 import { toValidatorOperatorAddress } from '../utils/address'
 
-const broadcastOptions = { mode: 'async' as const }
+// Use 'commit' mode to wait for transaction confirmation
+const broadcastOptions = { mode: 'commit' as const }
 const rpcErrorIndicators = ['RPC Error', 'Internal error']
+const GAS_MULTIPLIER = 1.5 // Multiply estimated gas by 1.5 for safety margin
 
 function isRpcErrorMessage(message: string) {
   return rpcErrorIndicators.some((indicator) => message.includes(indicator))
@@ -85,6 +87,66 @@ function buildRpcErrorMessage(error: any, errorMsg: string) {
     `Error: ${detailedError} ` +
     `(Code: ${code || 'unknown'})`
   )
+}
+
+/**
+ * Estimates gas for a transaction by simulating it
+ * Returns the estimated gas multiplied by GAS_MULTIPLIER for safety
+ */
+async function estimateGas(
+  signer: any, // DirectSigner
+  messages: any[]
+): Promise<string> {
+  try {
+    // Get account info for simulation
+    const account = await signer.getAccount()
+    
+    // Build the transaction body for simulation
+    // We need to create a temporary transaction body without actually signing
+    const txBody = await signer.buildTxBody({
+      messages,
+      memo: '',
+    })
+    
+    // Create signer info for simulation (without actual signature)
+    const signerInfo = {
+      publicKey: account.pubkey,
+      modeInfo: { single: { mode: 1 } }, // SIGN_MODE_DIRECT = 1
+      sequence: account.sequence,
+    }
+    
+    // Simulate the transaction
+    const simulation = await signer.simulateByTxBody(txBody, [signerInfo])
+    
+    if (!simulation.gasInfo || !simulation.gasInfo.gasUsed) {
+      throw new Error('Gas estimation failed: No gas info returned')
+    }
+    
+    const estimatedGas = BigInt(simulation.gasInfo.gasUsed)
+    const gasWithMultiplier = (estimatedGas * BigInt(Math.floor(GAS_MULTIPLIER * 100))) / BigInt(100)
+    
+    console.log('[GAS ESTIMATION]', {
+      estimated: estimatedGas.toString(),
+      withMultiplier: gasWithMultiplier.toString(),
+      multiplier: GAS_MULTIPLIER,
+    })
+    
+    return gasWithMultiplier.toString()
+  } catch (error: any) {
+    console.warn('[GAS ESTIMATION] Failed to estimate gas, using fallback:', error?.message)
+    // Fallback to a higher default gas limit if estimation fails
+    return '500000' // Higher default to avoid out-of-gas errors
+  }
+}
+
+/**
+ * Generates a Mintscan link for a transaction hash
+ */
+export function getMintscanLink(txHash: string, network: 'mainnet' | 'testnet' = 'mainnet'): string {
+  const baseUrl = network === 'mainnet' 
+    ? 'https://www.mintscan.io/injective'
+    : 'https://testnet.mintscan.io/injective-testnet'
+  return `${baseUrl}/tx/${txHash}`
 }
 
 // Helper functions to create messages and fees for Cosmos Kit's signAndBroadcast
@@ -303,9 +365,12 @@ export async function createValidatorTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
-      gas: '200000',
+      gas: estimatedGas,
     }
 
     // Log the message structure before encoding
@@ -342,9 +407,7 @@ export async function createValidatorTransaction(
     
     
     try {
-      // Try to intercept the signing process if possible
-      // Use signAndBroadcast with explicit broadcast options
-      // Try 'async' mode first, which is more reliable for RPC endpoints
+      // Use signAndBroadcast with 'commit' mode to wait for confirmation
       const result = await signer.signAndBroadcast(
         {
           messages: [msg],
@@ -353,13 +416,67 @@ export async function createValidatorTransaction(
         broadcastOptions
       )
       
-      console.log('[AFTER BROADCAST] Success! Result:', {
+      console.log('[AFTER BROADCAST] Initial result:', {
         transactionHash: result.transactionHash,
         rawResponse: result.rawResponse,
         broadcastResponse: result.broadcastResponse,
       })
       
-      return result
+      // For commit mode, check the broadcastResponse first
+      // It contains checkTx and txResult which tell us if the transaction failed
+      const broadcastResponse = result.broadcastResponse as any
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          // Transaction failed in deliverTx - extract the error log
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+          console.error('[TRANSACTION FAILED]', {
+            transactionHash: result.transactionHash,
+            code: txResult.code,
+            codespace: txResult.codespace,
+            log: txResult.log,
+            gasUsed: txResult.gasUsed?.toString(),
+            gasWanted: txResult.gasWanted?.toString(),
+          })
+          throw new Error(errorLog)
+        }
+      }
+      
+      // Wait for transaction to be finalized in a block
+      // The wait() method polls until the transaction is included and returns the final TxResponse
+      let txResponse
+      try {
+        txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      } catch (waitError: any) {
+        // If wait fails but we have a broadcastResponse with txResult, use that
+        if (broadcastResponse && 'txResult' in broadcastResponse) {
+          const txResult = broadcastResponse.txResult
+          if (txResult && txResult.code !== 0) {
+            const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+            throw new Error(errorLog)
+          }
+        }
+        throw waitError
+      }
+      
+      console.log('[AFTER FINALIZATION] Transaction finalized:', {
+        transactionHash: result.transactionHash,
+        code: txResponse.code,
+        height: txResponse.height,
+        rawLog: txResponse.rawLog,
+      })
+      
+      // Check if transaction actually succeeded (code 0 = success)
+      if (txResponse.code !== 0) {
+        const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+        throw new Error(errorMsg)
+      }
+      
+      return {
+        ...result,
+        txResponse, // Include the finalized tx response
+        rawLog: txResponse.rawLog, // Include raw log for display
+      }
     } catch (signError: any) {
       console.log('[SIGN/BROADCAST ERROR] Caught error:', {
         message: signError?.message,
@@ -427,34 +544,73 @@ export async function registerOrchestratorTransaction(
   _chainId: string
 ) {
   try {
-    // Validate that the signer is the validator operator
-    if (!address.toLowerCase().includes(data.validatorAddress.toLowerCase().substring(0, 10))) {
-      throw new Error('The connected wallet must be the validator operator address')
-    }
+    // Derive validator operator address from the wallet account (same as createValidatorTransaction)
+    const validatorAddress = toValidatorOperatorAddress(address)
 
     // MsgSetOrchestratorAddress from Peggy module
     // Note: This message type may need to be imported from Injective SDK
     const msg = {
       typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
       value: {
-        validator: data.validatorAddress,
+        validator: validatorAddress, // Use derived validator operator address
         orchestrator: data.orchestratorAddress,
         ethereum: data.ethereumAddress,
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -511,18 +667,59 @@ export async function editValidatorTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -574,18 +771,59 @@ export async function delegateTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -634,18 +872,59 @@ export async function undelegateTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''

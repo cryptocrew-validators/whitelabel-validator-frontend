@@ -48,6 +48,7 @@ export interface TransactionStatus {
   status: 'idle' | 'pending' | 'success' | 'error'
   hash?: string
   error?: string
+  rawLog?: string // Raw transaction log from the chain
 }
 
 export type Network = 'mainnet' | 'testnet'
