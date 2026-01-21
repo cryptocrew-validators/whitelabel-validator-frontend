@@ -10,7 +10,7 @@ import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
 
 export default function ValidatorRegistrationPage() {
-  const { address, getOfflineSignerDirect, chain, status, sendTx } = useChain('injective')
+  const { address, getOfflineSignerDirect, chain, status } = useChain('injective')
   const { network } = useNetwork()
   const [validatorTxStatus, setValidatorTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [orchestratorTxStatus, setOrchestratorTxStatus] = useState<TxStatus>({ status: 'idle' })
@@ -41,17 +41,27 @@ export default function ValidatorRegistrationPage() {
       // Use Injective DirectSigner's signAndBroadcast which properly handles EthAccount
       const result = await createValidatorTransaction(signer, address, data, chain.chain_id)
       
-      setValidatorTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
-      setValidatorRegistered(true)
+      // Only proceed if transaction succeeded (code 0)
+      // The transaction function will throw if it failed, so if we get here, it succeeded
+      if (result.transactionHash) {
+        setValidatorTxStatus({ 
+          status: 'success', 
+          hash: result.transactionHash,
+          rawLog: (result as any).rawLog,
+        })
+        setValidatorRegistered(true)
+      } else {
+        throw new Error('Transaction completed but no transaction hash was returned')
+      }
     } catch (error: any) {
       console.error('Validator registration error:', error)
       const errorMessage = error?.message || String(error) || 'Failed to register validator'
+      // Try to extract raw log from error if available
+      const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
       setValidatorTxStatus({ 
         status: 'error', 
-        error: errorMessage
+        error: errorMessage,
+        rawLog: rawLog,
       })
     }
   }

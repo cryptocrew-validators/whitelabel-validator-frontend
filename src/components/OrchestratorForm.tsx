@@ -2,6 +2,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { orchestratorRegistrationSchema, OrchestratorRegistrationFormData } from '../utils/validation'
 import { useChain } from '@cosmos-kit/react'
+import { toValidatorOperatorAddress } from '../utils/address'
+import { useEffect } from 'react'
 
 interface OrchestratorFormProps {
   onSubmit: (data: OrchestratorRegistrationFormData) => Promise<void>
@@ -20,12 +22,13 @@ export function OrchestratorForm({ onSubmit, isSubmitting }: OrchestratorFormPro
     resolver: zodResolver(orchestratorRegistrationSchema),
   })
 
-  // Auto-fill validator address from connected wallet
-  if (address) {
-    // Convert account address to validator operator address
-    // This is a simplified version - in practice, you'd need to derive the operator address
-    setValue('validatorAddress', address)
-  }
+  // Derive validator operator address from connected wallet (same as createValidatorTransaction)
+  useEffect(() => {
+    if (address) {
+      const validatorAddress = toValidatorOperatorAddress(address)
+      setValue('validatorAddress', validatorAddress)
+    }
+  }, [address, setValue])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="orchestrator-form">
@@ -43,7 +46,10 @@ export function OrchestratorForm({ onSubmit, isSubmitting }: OrchestratorFormPro
             {...register('validatorAddress')}
             type="text"
             placeholder="injvaloper1..."
+            readOnly
+            style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
           />
+          <small>Derived from your connected wallet address</small>
         </label>
         {errors.validatorAddress && (
           <span className="error">{errors.validatorAddress.message}</span>

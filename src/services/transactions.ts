@@ -416,23 +416,67 @@ export async function createValidatorTransaction(
         broadcastOptions
       )
       
-      console.log('[AFTER BROADCAST] Success! Result:', {
+      console.log('[AFTER BROADCAST] Initial result:', {
         transactionHash: result.transactionHash,
         rawResponse: result.rawResponse,
         broadcastResponse: result.broadcastResponse,
       })
       
-      // Check if transaction actually succeeded (commit mode returns the result)
-      if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
-        const txResponse = (result.broadcastResponse as any).txResponse
-        if (txResponse && txResponse.code !== 0) {
-          throw new Error(
-            `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
-          )
+      // For commit mode, check the broadcastResponse first
+      // It contains checkTx and txResult which tell us if the transaction failed
+      const broadcastResponse = result.broadcastResponse as any
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          // Transaction failed in deliverTx - extract the error log
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+          console.error('[TRANSACTION FAILED]', {
+            transactionHash: result.transactionHash,
+            code: txResult.code,
+            codespace: txResult.codespace,
+            log: txResult.log,
+            gasUsed: txResult.gasUsed?.toString(),
+            gasWanted: txResult.gasWanted?.toString(),
+          })
+          throw new Error(errorLog)
         }
       }
       
-      return result
+      // Wait for transaction to be finalized in a block
+      // The wait() method polls until the transaction is included and returns the final TxResponse
+      let txResponse
+      try {
+        txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      } catch (waitError: any) {
+        // If wait fails but we have a broadcastResponse with txResult, use that
+        if (broadcastResponse && 'txResult' in broadcastResponse) {
+          const txResult = broadcastResponse.txResult
+          if (txResult && txResult.code !== 0) {
+            const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+            throw new Error(errorLog)
+          }
+        }
+        throw waitError
+      }
+      
+      console.log('[AFTER FINALIZATION] Transaction finalized:', {
+        transactionHash: result.transactionHash,
+        code: txResponse.code,
+        height: txResponse.height,
+        rawLog: txResponse.rawLog,
+      })
+      
+      // Check if transaction actually succeeded (code 0 = success)
+      if (txResponse.code !== 0) {
+        const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+        throw new Error(errorMsg)
+      }
+      
+      return {
+        ...result,
+        txResponse, // Include the finalized tx response
+        rawLog: txResponse.rawLog, // Include raw log for display
+      }
     } catch (signError: any) {
       console.log('[SIGN/BROADCAST ERROR] Caught error:', {
         message: signError?.message,
@@ -500,17 +544,15 @@ export async function registerOrchestratorTransaction(
   _chainId: string
 ) {
   try {
-    // Validate that the signer is the validator operator
-    if (!address.toLowerCase().includes(data.validatorAddress.toLowerCase().substring(0, 10))) {
-      throw new Error('The connected wallet must be the validator operator address')
-    }
+    // Derive validator operator address from the wallet account (same as createValidatorTransaction)
+    const validatorAddress = toValidatorOperatorAddress(address)
 
     // MsgSetOrchestratorAddress from Peggy module
     // Note: This message type may need to be imported from Injective SDK
     const msg = {
       typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
       value: {
-        validator: data.validatorAddress,
+        validator: validatorAddress, // Use derived validator operator address
         orchestrator: data.orchestratorAddress,
         ethereum: data.ethereumAddress,
       },
@@ -532,17 +574,43 @@ export async function registerOrchestratorTransaction(
       broadcastOptions
     )
     
-    // Check if transaction actually succeeded
-    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
-      const txResponse = (result.broadcastResponse as any).txResponse
-      if (txResponse && txResponse.code !== 0) {
-        throw new Error(
-          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
-        )
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
       }
     }
     
-    return result
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -615,17 +683,43 @@ export async function editValidatorTransaction(
       broadcastOptions
     )
     
-    // Check if transaction actually succeeded
-    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
-      const txResponse = (result.broadcastResponse as any).txResponse
-      if (txResponse && txResponse.code !== 0) {
-        throw new Error(
-          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
-        )
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
       }
     }
     
-    return result
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -693,17 +787,43 @@ export async function delegateTransaction(
       broadcastOptions
     )
     
-    // Check if transaction actually succeeded
-    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
-      const txResponse = (result.broadcastResponse as any).txResponse
-      if (txResponse && txResponse.code !== 0) {
-        throw new Error(
-          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
-        )
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
       }
     }
     
-    return result
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -768,17 +888,43 @@ export async function undelegateTransaction(
       broadcastOptions
     )
     
-    // Check if transaction actually succeeded
-    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
-      const txResponse = (result.broadcastResponse as any).txResponse
-      if (txResponse && txResponse.code !== 0) {
-        throw new Error(
-          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
-        )
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
       }
     }
     
-    return result
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''

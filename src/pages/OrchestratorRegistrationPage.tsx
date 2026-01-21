@@ -32,15 +32,25 @@ export default function OrchestratorRegistrationPage() {
       
       const result = await registerOrchestratorTransaction(signer, address, data, chain.chain_id)
       
-      setOrchestratorTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
+      // Only proceed if transaction succeeded (code 0)
+      // The transaction function will throw if it failed, so if we get here, it succeeded
+      if (result.transactionHash) {
+        setOrchestratorTxStatus({ 
+          status: 'success', 
+          hash: result.transactionHash,
+          rawLog: (result as any).rawLog,
+        })
+      } else {
+        throw new Error('Transaction completed but no transaction hash was returned')
+      }
     } catch (error: any) {
       console.error('Orchestrator registration error:', error)
+      // Try to extract raw log from error if available
+      const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
       setOrchestratorTxStatus({ 
         status: 'error', 
-        error: error.message || 'Failed to register orchestrator' 
+        error: error.message || 'Failed to register orchestrator',
+        rawLog: rawLog,
       })
     }
   }
