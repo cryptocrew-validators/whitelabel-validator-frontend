@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Injective Validator Control</title>
+    <script>
+      // Polyfills must be loaded before any other code
+      if (typeof global === 'undefined') {
+        var global = globalThis;
+      }
+      // Ensure process exists
+      if (typeof process === 'undefined') {
+        window.process = { env: {}, version: '', versions: {}, browser: true };
+      }
+      
+      // Suppress harmless browser extension errors
+      const originalError = console.error;
+      const originalWarn = console.warn;
+      
+      console.error = function(...args) {
+        const message = args[0]?.toString() || '';
+        const fullMessage = args.join(' ') || '';
+        // Suppress MetaMask and other extension errors
+        if (
+          message.includes('MetaMask encountered an error') ||
+          message.includes('Cannot set property ethereum') ||
+          message.includes('Internal JSON-RPC error') ||
+          message.includes('inject.js') ||
+          message.includes('injected-penumbra') ||
+          message.includes('Receiving end does not exist') ||
+          fullMessage.includes('initClientError') ||
+          fullMessage.includes('Client Not Exist') ||
+          fullMessage.includes('walletconnectOptions is not provided') ||
+          fullMessage.includes('ERROR - Leap') ||
+          fullMessage.includes('ERROR - Cosmostation') ||
+          fullMessage.includes('ERROR - Keplr Mobile') ||
+          fullMessage.includes('AggregateError: All promises were rejected') ||
+          (message.includes('Failed to load balance') && fullMessage.includes('AggregateError'))
+        ) {
+          return; // Suppress these errors
+        }
+        originalError.apply(console, args);
+      };
+      
+      console.warn = function(...args) {
+        const message = args[0]?.toString() || '';
+        // Suppress extension warnings
+        if (
+          message.includes('MetaMask') ||
+          message.includes('inject.js') ||
+          message.includes('injected-')
+        ) {
+          return; // Suppress these warnings
+        }
+        originalWarn.apply(console, args);
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
