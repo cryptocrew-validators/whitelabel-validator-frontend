@@ -1,4 +1,4 @@
-import { fromBech32 } from '@cosmjs/encoding'
+import { fromBech32, toBech32 } from '@cosmjs/encoding'
 
 export function isValidBech32Address(address: string, prefix: string): boolean {
   try {
@@ -15,6 +15,15 @@ export function isValidInjectiveAddress(address: string): boolean {
 
 export function isValidValidatorOperatorAddress(address: string): boolean {
   return isValidBech32Address(address, 'injvaloper')
+}
+
+export function toValidatorOperatorAddress(address: string): string {
+  if (isValidValidatorOperatorAddress(address)) {
+    return address
+  }
+
+  const decoded = fromBech32(address)
+  return toBech32('injvaloper', decoded.data)
 }
 
 export function isValidEthereumAddress(address: string): boolean {

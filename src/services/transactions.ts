@@ -6,6 +6,7 @@ import {
 } from '../utils/validation'
 import type { StdFee } from '@interchainjs/types'
 import type { EncodeObject } from '@cosmjs/proto-signing'
+import { toValidatorOperatorAddress } from '../utils/address'
 
 // Helper functions to create messages and fees for Cosmos Kit's signAndBroadcast
 export function createValidatorMessage(
@@ -55,6 +56,8 @@ export function createValidatorMessage(
   const maxCommissionRate = (parseFloat(data.maxCommissionRate) / 100).toFixed(18)
   const maxCommissionChangeRate = (parseFloat(data.maxCommissionChangeRate) / 100).toFixed(18)
 
+  const validatorAddress = toValidatorOperatorAddress(address)
+
   const msg: EncodeObject = {
     typeUrl: '/cosmos.staking.v1beta1.MsgCreateValidator',
     value: {
@@ -72,7 +75,7 @@ export function createValidatorMessage(
       },
       minSelfDelegation: minSelfDelegationBase,
       delegatorAddress: address,
-      validatorAddress: address, // Will be derived
+      validatorAddress,
       pubkey: consensusPubkey,
       value: {
         denom: 'inj',
@@ -178,6 +181,8 @@ export async function createValidatorTransaction(
 
     // Build MsgCreateValidator
     // The DirectSigner will encode this using the registered encoders
+    const validatorAddress = toValidatorOperatorAddress(address)
+
     const msg = {
       typeUrl: '/cosmos.staking.v1beta1.MsgCreateValidator',
       value: {
@@ -195,7 +200,7 @@ export async function createValidatorTransaction(
         },
         minSelfDelegation: minSelfDelegationBase,
         delegatorAddress: address,
-        validatorAddress: address, // Will be derived
+        validatorAddress,
         pubkey: consensusPubkey,
         value: {
           denom: 'inj',
