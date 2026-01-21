@@ -340,27 +340,17 @@ export async function createValidatorTransaction(
     console.log('[BEFORE ENCODING] Fee:', fee)
     console.log('[BEFORE ENCODING] Full message object:', msg)
     
-    // Use signAndBroadcast with explicit broadcast options
-    // Try 'async' mode first, which is more reliable for RPC endpoints
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      broadcastOptions
-    )
     
     try {
       // Try to intercept the signing process if possible
-      // Use 'sync' mode - returns immediately with transaction hash
+      // Use signAndBroadcast with explicit broadcast options
+      // Try 'async' mode first, which is more reliable for RPC endpoints
       const result = await signer.signAndBroadcast(
         {
           messages: [msg],
           fee,
         },
-        {
-          mode: 'sync', // Use sync mode - some RPC endpoints don't support async
-        }
+        broadcastOptions
       )
       
       console.log('[AFTER BROADCAST] Success! Result:', {
