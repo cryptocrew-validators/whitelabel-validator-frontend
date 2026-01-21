@@ -2,6 +2,7 @@
 // DirectSigner should be imported from @interchainjs/injective
 // The package should re-export it from @interchainjs/cosmos with Injective-specific handling
 import { DirectSigner as CosmosDirectSigner, createCosmosQueryClient } from '@interchainjs/cosmos'
+import { createInjectiveSignerConfig } from '@interchainjs/injective'
 import { OfflineSigner, OfflineDirectSigner } from '@cosmjs/proto-signing'
 import { getChainConfig } from '../config/chains'
 import { Network } from '../types'
@@ -46,11 +47,12 @@ export async function createInjectiveSigner(
   // Using Injective-specific chainId and addressPrefix ensures proper type handling
   // This signer will correctly handle Injective's EthAccount type
   // Type assertion: offlineSigner from getOfflineSignerDirect() is compatible with DirectSigner
-  const signer = new CosmosDirectSigner(offlineSigner as any, {
+  const signerConfig = createInjectiveSignerConfig({
     chainId,
     queryClient,
     addressPrefix: config.bech32Prefix, // 'inj' - Injective-specific prefix
   })
+  const signer = new CosmosDirectSigner(offlineSigner as any, signerConfig)
   
   // Register encoders for staking messages
   // We need to properly encode messages using protobuf encoding
