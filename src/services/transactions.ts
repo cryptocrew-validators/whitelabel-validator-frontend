@@ -148,10 +148,25 @@ export async function createValidatorTransaction(
     const pubkeyMessage = Ed25519PubKey.fromPartial({ key: pubkeyBytes })
     const encodedPubkey = Ed25519PubKey.encode(pubkeyMessage).finish()
     
+    console.log('[PUBKEY ENCODING] Step 1 - Ed25519PubKey encoded:', {
+      inputBytes: pubkeyBytes.length,
+      encodedLength: encodedPubkey.length,
+      encodedBase64: btoa(String.fromCharCode(...encodedPubkey)),
+    })
+    
     // Wrap in Any type for MsgCreateValidator (using fromPartial like the example)
     const consensusPubkey = Any.fromPartial({
       typeUrl: '/cosmos.crypto.ed25519.PubKey',
       value: encodedPubkey,
+    })
+    
+    console.log('[PUBKEY ENCODING] Step 2 - Any wrapper created:', {
+      typeUrl: consensusPubkey.typeUrl,
+      valueType: consensusPubkey.value instanceof Uint8Array ? 'Uint8Array' : typeof consensusPubkey.value,
+      valueLength: consensusPubkey.value instanceof Uint8Array ? consensusPubkey.value.length : 'N/A',
+      valueBase64: consensusPubkey.value instanceof Uint8Array 
+        ? btoa(String.fromCharCode(...consensusPubkey.value))
+        : 'N/A',
     })
 
     // Validate amounts
@@ -214,23 +229,93 @@ export async function createValidatorTransaction(
       gas: '200000',
     }
 
-    // Log the message structure before signing for debugging
-    console.log('Message to sign:', JSON.stringify(msg, null, 2))
+    // Log the message structure before encoding
+    console.log('[BEFORE ENCODING] Message structure:', {
+      typeUrl: msg.typeUrl,
+      value: JSON.parse(JSON.stringify(msg.value, (key, value) => {
+        // Convert Uint8Array and Any types for better logging
+        if (value instanceof Uint8Array) {
+          return {
+            __type: 'Uint8Array',
+            base64: btoa(String.fromCharCode(...value)),
+            length: value.length,
+          }
+        }
+        // Handle Any type specially
+        if (key === 'pubkey' && value && typeof value === 'object' && 'typeUrl' in value && 'value' in value) {
+          return {
+            typeUrl: value.typeUrl,
+            value: value.value instanceof Uint8Array
+              ? {
+                  __type: 'Uint8Array',
+                  base64: btoa(String.fromCharCode(...value.value)),
+                  length: value.value.length,
+                }
+              : value.value,
+          }
+        }
+        return value
+      })),
+    })
+    
+    console.log('[BEFORE ENCODING] Fee:', fee)
+    console.log('[BEFORE ENCODING] Full message object:', msg)
     
     // Use signAndBroadcast with explicit broadcast options
-    // Try 'async' mode first, which is more reliable for RPC endpoints
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      {
-        mode: 'async', // Use async mode for better RPC compatibility
-      }
-    )
+    // Try 'sync' mode first, as some RPC endpoints don't support async
+    console.log('[BEFORE SIGN] Calling signAndBroadcast with:', {
+      messageCount: 1,
+      fee,
+      broadcastMode: 'sync',
+    })
     
-    // Return the result which includes transactionHash
-    return result
+    try {
+      // Try to intercept the signing process if possible
+      // Use 'sync' mode - returns immediately with transaction hash
+      const result = await signer.signAndBroadcast(
+        {
+          messages: [msg],
+          fee,
+        },
+        {
+          mode: 'sync', // Use sync mode - some RPC endpoints don't support async
+        }
+      )
+      
+      console.log('[AFTER BROADCAST] Success! Result:', {
+        transactionHash: result.transactionHash,
+        rawResponse: result.rawResponse,
+        broadcastResponse: result.broadcastResponse,
+      })
+      
+      return result
+    } catch (signError: any) {
+      console.log('[SIGN/BROADCAST ERROR] Caught error:', {
+        message: signError?.message,
+        code: signError?.code,
+        name: signError?.name,
+        stack: signError?.stack,
+        // Check for signed transaction bytes in various places
+        txBytes: signError?.txBytes,
+        signedTx: signError?.signedTx,
+        transaction: signError?.transaction,
+      })
+      
+      // If we can get the signed transaction bytes from the error, log them
+      const signedTxBytes = signError?.txBytes || signError?.signedTx?.txBytes || signError?.transaction?.txBytes
+      if (signedTxBytes && signedTxBytes instanceof Uint8Array) {
+        const hexArray: string[] = []
+        for (let i = 0; i < signedTxBytes.length; i++) {
+          hexArray.push(signedTxBytes[i].toString(16).padStart(2, '0'))
+        }
+        console.log('[AFTER SIGNING] Signed transaction bytes:', {
+          length: signedTxBytes.length,
+          base64: btoa(String.fromCharCode(...signedTxBytes)),
+          hex: hexArray.join('').substring(0, 200) + '...', // Truncate for readability
+        })
+      }
+      throw signError
+    }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
