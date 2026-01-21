@@ -8,8 +8,10 @@ import type { StdFee } from '@interchainjs/types'
 import type { EncodeObject } from '@cosmjs/proto-signing'
 import { toValidatorOperatorAddress } from '../utils/address'
 
-const broadcastOptions = { mode: 'async' as const }
+// Use 'commit' mode to wait for transaction confirmation
+const broadcastOptions = { mode: 'commit' as const }
 const rpcErrorIndicators = ['RPC Error', 'Internal error']
+const GAS_MULTIPLIER = 1.5 // Multiply estimated gas by 1.5 for safety margin
 
 function isRpcErrorMessage(message: string) {
   return rpcErrorIndicators.some((indicator) => message.includes(indicator))
@@ -85,6 +87,66 @@ function buildRpcErrorMessage(error: any, errorMsg: string) {
     `Error: ${detailedError} ` +
     `(Code: ${code || 'unknown'})`
   )
+}
+
+/**
+ * Estimates gas for a transaction by simulating it
+ * Returns the estimated gas multiplied by GAS_MULTIPLIER for safety
+ */
+async function estimateGas(
+  signer: any, // DirectSigner
+  messages: any[]
+): Promise<string> {
+  try {
+    // Get account info for simulation
+    const account = await signer.getAccount()
+    
+    // Build the transaction body for simulation
+    // We need to create a temporary transaction body without actually signing
+    const txBody = await signer.buildTxBody({
+      messages,
+      memo: '',
+    })
+    
+    // Create signer info for simulation (without actual signature)
+    const signerInfo = {
+      publicKey: account.pubkey,
+      modeInfo: { single: { mode: 1 } }, // SIGN_MODE_DIRECT = 1
+      sequence: account.sequence,
+    }
+    
+    // Simulate the transaction
+    const simulation = await signer.simulateByTxBody(txBody, [signerInfo])
+    
+    if (!simulation.gasInfo || !simulation.gasInfo.gasUsed) {
+      throw new Error('Gas estimation failed: No gas info returned')
+    }
+    
+    const estimatedGas = BigInt(simulation.gasInfo.gasUsed)
+    const gasWithMultiplier = (estimatedGas * BigInt(Math.floor(GAS_MULTIPLIER * 100))) / BigInt(100)
+    
+    console.log('[GAS ESTIMATION]', {
+      estimated: estimatedGas.toString(),
+      withMultiplier: gasWithMultiplier.toString(),
+      multiplier: GAS_MULTIPLIER,
+    })
+    
+    return gasWithMultiplier.toString()
+  } catch (error: any) {
+    console.warn('[GAS ESTIMATION] Failed to estimate gas, using fallback:', error?.message)
+    // Fallback to a higher default gas limit if estimation fails
+    return '500000' // Higher default to avoid out-of-gas errors
+  }
+}
+
+/**
+ * Generates a Mintscan link for a transaction hash
+ */
+export function getMintscanLink(txHash: string, network: 'mainnet' | 'testnet' = 'mainnet'): string {
+  const baseUrl = network === 'mainnet' 
+    ? 'https://www.mintscan.io/injective'
+    : 'https://testnet.mintscan.io/injective-testnet'
+  return `${baseUrl}/tx/${txHash}`
 }
 
 // Helper functions to create messages and fees for Cosmos Kit's signAndBroadcast
@@ -303,9 +365,12 @@ export async function createValidatorTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
-      gas: '200000',
+      gas: estimatedGas,
     }
 
     // Log the message structure before encoding
@@ -342,9 +407,7 @@ export async function createValidatorTransaction(
     
     
     try {
-      // Try to intercept the signing process if possible
-      // Use signAndBroadcast with explicit broadcast options
-      // Try 'async' mode first, which is more reliable for RPC endpoints
+      // Use signAndBroadcast with 'commit' mode to wait for confirmation
       const result = await signer.signAndBroadcast(
         {
           messages: [msg],
@@ -358,6 +421,16 @@ export async function createValidatorTransaction(
         rawResponse: result.rawResponse,
         broadcastResponse: result.broadcastResponse,
       })
+      
+      // Check if transaction actually succeeded (commit mode returns the result)
+      if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
+        const txResponse = (result.broadcastResponse as any).txResponse
+        if (txResponse && txResponse.code !== 0) {
+          throw new Error(
+            `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
+          )
+        }
+      }
       
       return result
     } catch (signError: any) {
@@ -443,18 +516,33 @@ export async function registerOrchestratorTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // Check if transaction actually succeeded
+    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
+      const txResponse = (result.broadcastResponse as any).txResponse
+      if (txResponse && txResponse.code !== 0) {
+        throw new Error(
+          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
+        )
+      }
+    }
+    
+    return result
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -511,18 +599,33 @@ export async function editValidatorTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // Check if transaction actually succeeded
+    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
+      const txResponse = (result.broadcastResponse as any).txResponse
+      if (txResponse && txResponse.code !== 0) {
+        throw new Error(
+          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
+        )
+      }
+    }
+    
+    return result
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -574,18 +677,33 @@ export async function delegateTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // Check if transaction actually succeeded
+    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
+      const txResponse = (result.broadcastResponse as any).txResponse
+      if (txResponse && txResponse.code !== 0) {
+        throw new Error(
+          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
+        )
+      }
+    }
+    
+    return result
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -634,18 +752,33 @@ export async function undelegateTransaction(
       },
     }
 
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
-      gas: '200000',
+      gas: estimatedGas,
     }
 
-    return await signer.signAndBroadcast(
+    const result = await signer.signAndBroadcast(
       {
         messages: [msg],
         fee,
       },
       broadcastOptions
     )
+    
+    // Check if transaction actually succeeded
+    if (result.broadcastResponse && 'txResponse' in result.broadcastResponse) {
+      const txResponse = (result.broadcastResponse as any).txResponse
+      if (txResponse && txResponse.code !== 0) {
+        throw new Error(
+          `Transaction failed with code ${txResponse.code}: ${txResponse.rawLog || 'Unknown error'}`
+        )
+      }
+    }
+    
+    return result
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
