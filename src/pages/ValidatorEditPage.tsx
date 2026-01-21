@@ -28,9 +28,9 @@ export default function ValidatorEditPage() {
     setLoading(true)
     try {
       const queryService = new QueryService(network)
-      // Convert account address to validator operator address
-      // This is simplified - in practice you'd need to derive it
-      const validatorAddress = address.replace('inj1', 'injvaloper1')
+      // Derive validator operator address from wallet account (same as createValidatorTransaction)
+      const { toValidatorOperatorAddress } = await import('../utils/address')
+      const validatorAddress = toValidatorOperatorAddress(address)
       const validatorInfo = await queryService.getValidator(validatorAddress)
       setValidator(validatorInfo)
     } catch (error) {
@@ -65,17 +65,28 @@ export default function ValidatorEditPage() {
         chain.chain_id
       )
       
-      setTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
-      
-      // Reload validator info
-      await loadValidator()
+      // Only proceed if transaction succeeded (code 0)
+      // The transaction function will throw if it failed, so if we get here, it succeeded
+      if (result.transactionHash) {
+        setTxStatus({ 
+          status: 'success', 
+          hash: result.transactionHash,
+          rawLog: (result as any).rawLog,
+        })
+        
+        // Reload validator info
+        await loadValidator()
+      } else {
+        throw new Error('Transaction completed but no transaction hash was returned')
+      }
     } catch (error: any) {
+      console.error('Validator edit error:', error)
+      // Try to extract raw log from error if available
+      const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
       setTxStatus({ 
         status: 'error', 
-        error: error.message || 'Failed to update validator' 
+        error: error.message || 'Failed to update validator',
+        rawLog: rawLog,
       })
     }
   }
@@ -88,25 +99,32 @@ export default function ValidatorEditPage() {
     <div className="page">
       <h1>Edit Validator</h1>
       
-      {address && (
+      {!address ? (
+        <div className="error-message">
+          Please connect your wallet to edit validator information.
+        </div>
+      ) : loading ? (
+        <div>Loading validator information...</div>
+      ) : !validator ? (
+        <div className="error-message">
+          No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
+        </div>
+      ) : (
         <>
-          {loading ? (
-            <div>Loading validator information...</div>
-          ) : validator ? (
-            <>
-              <ValidatorEditForm
-                validator={validator}
-                onSubmit={handleSubmit}
-                isSubmitting={txStatus.status === 'pending'}
-              />
-              <TransactionStatus 
-                status={txStatus} 
-                explorerUrl={explorerUrl}
-              />
-            </>
-          ) : (
-            <div>Validator not found. Please ensure you're connected with a validator operator wallet.</div>
-          )}
+          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Validator Operator Address</h3>
+            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
+          </div>
+          <ValidatorEditForm
+            validator={validator}
+            onSubmit={handleSubmit}
+            isSubmitting={txStatus.status === 'pending'}
+          />
+          <TransactionStatus 
+            status={txStatus} 
+            explorerUrl={explorerUrl}
+            network={network}
+          />
         </>
       )}
     </div>

@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useChain } from '@cosmos-kit/react'
 import { ValidatorRegistrationForm } from '../components/ValidatorRegistrationForm'
 import { OrchestratorForm } from '../components/OrchestratorForm'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { ValidatorRegistrationFormData, OrchestratorRegistrationFormData } from '../utils/validation'
-import { TransactionStatus as TxStatus } from '../types'
+import { TransactionStatus as TxStatus, ValidatorInfo } from '../types'
 import { createValidatorTransaction, registerOrchestratorTransaction } from '../services/transactions'
 import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
+import { QueryService } from '../services/queries'
+import { toValidatorOperatorAddress } from '../utils/address'
 
 export default function ValidatorRegistrationPage() {
   const { address, getOfflineSignerDirect, chain, status } = useChain('injective')
@@ -15,6 +17,40 @@ export default function ValidatorRegistrationPage() {
   const [validatorTxStatus, setValidatorTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [orchestratorTxStatus, setOrchestratorTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [validatorRegistered, setValidatorRegistered] = useState(false)
+  const [existingValidator, setExistingValidator] = useState<ValidatorInfo | null>(null)
+  const [loadingValidator, setLoadingValidator] = useState(false)
+
+  useEffect(() => {
+    if (address) {
+      checkExistingValidator()
+    }
+  }, [address, network])
+
+  const checkExistingValidator = async () => {
+    if (!address) return
+    
+    setLoadingValidator(true)
+    try {
+      const queryService = new QueryService(network)
+      // Derive validator operator address from wallet account (same as createValidatorTransaction)
+      const derivedValidatorAddress = toValidatorOperatorAddress(address)
+      const validatorInfo = await queryService.getValidator(derivedValidatorAddress)
+      
+      if (validatorInfo) {
+        setExistingValidator(validatorInfo)
+        setValidatorRegistered(true) // If validator exists, mark as registered
+      } else {
+        setExistingValidator(null)
+        setValidatorRegistered(false)
+      }
+    } catch (error) {
+      console.error('Failed to check existing validator:', error)
+      setExistingValidator(null)
+      setValidatorRegistered(false)
+    } finally {
+      setLoadingValidator(false)
+    }
+  }
 
   const handleValidatorSubmit = async (data: ValidatorRegistrationFormData) => {
     if (!address || !getOfflineSignerDirect) {
@@ -50,6 +86,8 @@ export default function ValidatorRegistrationPage() {
           rawLog: (result as any).rawLog,
         })
         setValidatorRegistered(true)
+        // Refresh validator check to get the newly registered validator info
+        await checkExistingValidator()
       } else {
         throw new Error('Transaction completed but no transaction hash was returned')
       }
@@ -109,34 +147,53 @@ export default function ValidatorRegistrationPage() {
         <div className="error-message">
           Please connect your wallet to register a validator.
         </div>
+      ) : loadingValidator ? (
+        <div>Checking for existing validator...</div>
+      ) : existingValidator && validatorTxStatus.status !== 'success' ? (
+        <>
+          <div className="error-message">
+            A validator has already been registered with this wallet. You cannot register another validator with the same wallet address.
+          </div>
+          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Existing Validator Operator Address</h3>
+            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingValidator.operatorAddress}</p>
+            <p style={{ marginTop: '0.5rem', color: '#aaa' }}>
+              Moniker: {existingValidator.moniker || 'N/A'}
+            </p>
+          </div>
+          <div style={{ marginTop: '1.5rem' }}>
+            <p>To register a new validator, please connect with a different wallet address.</p>
+            <p style={{ marginTop: '0.5rem', color: '#aaa' }}>
+              You can use the "Edit Validator" page to update your existing validator's information.
+            </p>
+          </div>
+        </>
+      ) : !validatorRegistered ? (
+        <>
+          <ValidatorRegistrationForm
+            onSubmit={handleValidatorSubmit}
+            isSubmitting={validatorTxStatus.status === 'pending'}
+          />
+          <TransactionStatus 
+            status={validatorTxStatus} 
+            explorerUrl={explorerUrl}
+            network={network}
+          />
+        </>
       ) : (
         <>
-          {!validatorRegistered ? (
-            <>
-              <ValidatorRegistrationForm
-                onSubmit={handleValidatorSubmit}
-                isSubmitting={validatorTxStatus.status === 'pending'}
-              />
-              <TransactionStatus 
-                status={validatorTxStatus} 
-                explorerUrl={explorerUrl}
-              />
-            </>
-          ) : (
-            <>
-              <div className="success-message">
-                Validator registered successfully! You can now register the orchestrator address.
-              </div>
-              <OrchestratorForm
-                onSubmit={handleOrchestratorSubmit}
-                isSubmitting={orchestratorTxStatus.status === 'pending'}
-              />
-              <TransactionStatus 
-                status={orchestratorTxStatus} 
-                explorerUrl={explorerUrl}
-              />
-            </>
-          )}
+          <div className="success-message">
+            Validator registered successfully! You can now register the orchestrator address.
+          </div>
+          <OrchestratorForm
+            onSubmit={handleOrchestratorSubmit}
+            isSubmitting={orchestratorTxStatus.status === 'pending'}
+          />
+          <TransactionStatus 
+            status={orchestratorTxStatus} 
+            explorerUrl={explorerUrl}
+            network={network}
+          />
         </>
       )}
     </div>

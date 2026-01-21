@@ -42,11 +42,18 @@ function extractRpcErrorDetails(error: any, fallbackMessage: string, rawMessage:
     detailedError = error.cause.message
   }
 
+  // Check for transaction hash in multiple places
   const txHash =
     rawMessage.match(/0x[a-fA-F0-9]{64}/)?.[0] ||
+    rawMessage.match(/[a-fA-F0-9]{64}/)?.[0] || // Also check for hex without 0x prefix
     error?.txHash ||
     error?.transactionHash ||
-    error?.data?.txHash
+    error?.data?.txHash ||
+    error?.response?.data?.txHash ||
+    error?.response?.data?.tx_response?.txhash ||
+    error?.response?.data?.txhash ||
+    error?.cause?.txHash ||
+    error?.cause?.transactionHash
 
   return {
     detailedError,
@@ -675,57 +682,146 @@ export async function editValidatorTransaction(
       gas: estimatedGas,
     }
 
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      broadcastOptions
-    )
-    
-    // For commit mode, check the broadcastResponse first
-    const broadcastResponse = result.broadcastResponse as any
-    if (broadcastResponse && 'txResult' in broadcastResponse) {
-      const txResult = broadcastResponse.txResult
-      if (txResult && txResult.code !== 0) {
-        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
-        throw new Error(errorLog)
-      }
-    }
-    
-    // Wait for transaction to be finalized in a block
-    let txResponse
+    // Log the message structure before encoding
+    console.log('[EDIT VALIDATOR] Before encoding:', {
+      typeUrl: msg.typeUrl,
+      value: msg.value,
+      fee,
+    })
+
     try {
-      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
-    } catch (waitError: any) {
-      // If wait fails but we have a broadcastResponse with txResult, use that
+      // Use signAndBroadcast with 'commit' mode to wait for confirmation
+      const result = await signer.signAndBroadcast(
+        {
+          messages: [msg],
+          fee,
+        },
+        broadcastOptions
+      )
+      
+      console.log('[EDIT VALIDATOR] After broadcast - Initial result:', {
+        transactionHash: result.transactionHash,
+        rawResponse: result.rawResponse,
+        broadcastResponse: result.broadcastResponse,
+      })
+      
+      // For commit mode, check the broadcastResponse first
+      // It contains checkTx and txResult which tell us if the transaction failed
+      const broadcastResponse = result.broadcastResponse as any
       if (broadcastResponse && 'txResult' in broadcastResponse) {
         const txResult = broadcastResponse.txResult
         if (txResult && txResult.code !== 0) {
-          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          // Transaction failed in deliverTx - extract the error log
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+          console.error('[EDIT VALIDATOR] Transaction failed:', {
+            transactionHash: result.transactionHash,
+            code: txResult.code,
+            codespace: txResult.codespace,
+            log: txResult.log,
+            gasUsed: txResult.gasUsed?.toString(),
+            gasWanted: txResult.gasWanted?.toString(),
+          })
           throw new Error(errorLog)
         }
       }
-      throw waitError
-    }
-    
-    // Check if transaction actually succeeded (code 0 = success)
-    if (txResponse.code !== 0) {
-      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
-      throw new Error(errorMsg)
-    }
-    
-    return {
-      ...result,
-      txResponse, // Include the finalized tx response
-      rawLog: txResponse.rawLog, // Include raw log for display
+      
+      // Wait for transaction to be finalized in a block
+      // The wait() method polls until the transaction is included and returns the final TxResponse
+      let txResponse
+      try {
+        txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      } catch (waitError: any) {
+        // If wait fails but we have a broadcastResponse with txResult, use that
+        if (broadcastResponse && 'txResult' in broadcastResponse) {
+          const txResult = broadcastResponse.txResult
+          if (txResult && txResult.code !== 0) {
+            const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+            throw new Error(errorLog)
+          }
+        }
+        throw waitError
+      }
+      
+      console.log('[EDIT VALIDATOR] After finalization - Transaction finalized:', {
+        transactionHash: result.transactionHash,
+        code: txResponse.code,
+        height: txResponse.height,
+        rawLog: txResponse.rawLog,
+      })
+      
+      // Check if transaction actually succeeded (code 0 = success)
+      if (txResponse.code !== 0) {
+        const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+        throw new Error(errorMsg)
+      }
+      
+      return {
+        ...result,
+        txResponse, // Include the finalized tx response
+        rawLog: txResponse.rawLog, // Include raw log for display
+      }
+    } catch (signError: any) {
+      console.log('[EDIT VALIDATOR] Sign/broadcast error:', {
+        message: signError?.message,
+        code: signError?.code,
+        name: signError?.name,
+        stack: signError?.stack,
+        // Check for signed transaction bytes in various places
+        txBytes: signError?.txBytes,
+        signedTx: signError?.signedTx,
+        transaction: signError?.transaction,
+        // Check for transaction hash in error (might have been broadcast despite error)
+        txHash: signError?.txHash,
+        transactionHash: signError?.transactionHash,
+        // Check for response data that might contain transaction info
+        response: signError?.response,
+        data: signError?.data,
+        cause: signError?.cause,
+      })
+      
+      // Check if transaction hash exists in error (transaction might have been broadcast)
+      const txHash = signError?.txHash || signError?.transactionHash || signError?.data?.txHash || signError?.response?.data?.txHash
+      if (txHash) {
+        console.log('[EDIT VALIDATOR] Transaction hash found in error, transaction may have been broadcast:', txHash)
+        // If we have a transaction hash, the transaction might have been broadcast successfully
+        // Try to wait for it and check its status
+        try {
+          // We need to create a result-like object to use wait()
+          // But since we don't have the actual result, we'll need to query the transaction
+          // For now, just log that we found a hash
+          console.warn('[EDIT VALIDATOR] Transaction may have been broadcast with hash:', txHash)
+        } catch (e) {
+          console.error('[EDIT VALIDATOR] Failed to check transaction status:', e)
+        }
+      }
+      
+      // If we can get the signed transaction bytes from the error, log them
+      const signedTxBytes = signError?.txBytes || signError?.signedTx?.txBytes || signError?.transaction?.txBytes
+      if (signedTxBytes && signedTxBytes instanceof Uint8Array) {
+        const hexArray: string[] = []
+        for (let i = 0; i < signedTxBytes.length; i++) {
+          hexArray.push(signedTxBytes[i].toString(16).padStart(2, '0'))
+        }
+        console.log('[EDIT VALIDATOR] Signed transaction bytes:', {
+          length: signedTxBytes.length,
+          base64: btoa(String.fromCharCode(...signedTxBytes)),
+          hex: hexArray.join('').substring(0, 200) + '...', // Truncate for readability
+        })
+      }
+      
+      // Re-throw the error so it can be handled by the outer catch block
+      throw signError
     }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
+    
+    // Check if user rejected the transaction
     if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
       throw new Error('Transaction was rejected. Please approve the transaction in your wallet.')
     }
+    
+    // Check for specific blockchain errors
     if (errorMsg.includes('insufficient funds')) {
       throw new Error('Insufficient balance. Please ensure you have enough INJ for transaction fees.')
     }
@@ -735,10 +831,16 @@ export async function editValidatorTransaction(
     if (errorMsg.includes('unauthorized')) {
       throw new Error('You are not authorized to edit this validator.')
     }
+    
+    // For RPC errors, provide helpful message
+    // The transaction might have been signed but broadcast failed
     if (isRpcErrorMessage(errorMsg)) {
+      // Log full error details for debugging
       logRpcError(error)
       throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
+    
+    // Re-throw other errors as-is
     throw error
   }
 }

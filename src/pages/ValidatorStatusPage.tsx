@@ -4,6 +4,7 @@ import { ValidatorInfo } from '../components/ValidatorInfo'
 import { ValidatorInfo as ValidatorInfoType, OrchestratorMapping } from '../types'
 import { QueryService } from '../services/queries'
 import { useNetwork } from '../contexts/NetworkContext'
+import { toValidatorOperatorAddress } from '../utils/address'
 
 export default function ValidatorStatusPage() {
   const { address } = useChain('injective')
@@ -14,25 +15,36 @@ export default function ValidatorStatusPage() {
   const [validatorAddress, setValidatorAddress] = useState<string>('')
 
   useEffect(() => {
-    if (validatorAddress) {
-      loadValidatorInfo()
+    if (address) {
+      loadValidator()
     }
-  }, [validatorAddress, network])
+  }, [address, network])
 
-  const loadValidatorInfo = async () => {
-    if (!validatorAddress) return
+  const loadValidator = async () => {
+    if (!address) return
     
     setLoading(true)
     try {
       const queryService = new QueryService(network)
+      // Derive validator operator address from wallet account (same as createValidatorTransaction)
+      const derivedValidatorAddress = toValidatorOperatorAddress(address)
       const [validatorInfo, orchestratorInfo] = await Promise.all([
-        queryService.getValidator(validatorAddress),
-        queryService.getOrchestratorMapping(validatorAddress),
+        queryService.getValidator(derivedValidatorAddress),
+        queryService.getOrchestratorMapping(derivedValidatorAddress),
       ])
-      setValidator(validatorInfo)
+      
+      if (validatorInfo) {
+        setValidator(validatorInfo)
+        setValidatorAddress(derivedValidatorAddress)
+      } else {
+        setValidator(null)
+        setValidatorAddress('')
+      }
       setOrchestrator(orchestratorInfo)
     } catch (error) {
       console.error('Failed to load validator info:', error)
+      setValidator(null)
+      setValidatorAddress('')
     } finally {
       setLoading(false)
     }
@@ -42,27 +54,28 @@ export default function ValidatorStatusPage() {
     <div className="page">
       <h1>Validator Status</h1>
       
-      <div className="form-group">
-        <label>
-          Validator Operator Address:
-          <input
-            type="text"
-            value={validatorAddress}
-            onChange={(e) => setValidatorAddress(e.target.value)}
-            placeholder="injvaloper1..."
+      {!address ? (
+        <div className="error-message">
+          Please connect your wallet to view validator status.
+        </div>
+      ) : loading ? (
+        <div>Loading validator information...</div>
+      ) : !validator ? (
+        <div className="error-message">
+          No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
+        </div>
+      ) : (
+        <>
+          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Validator Operator Address</h3>
+            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
+          </div>
+          <ValidatorInfo
+            validator={validator}
+            orchestrator={orchestrator}
+            loading={false}
           />
-        </label>
-        <button onClick={loadValidatorInfo} disabled={!validatorAddress || loading}>
-          {loading ? 'Loading...' : 'Load Validator'}
-        </button>
-      </div>
-
-      {validatorAddress && (
-        <ValidatorInfo
-          validator={validator}
-          orchestrator={orchestrator}
-          loading={loading}
-        />
+        </>
       )}
     </div>
   )

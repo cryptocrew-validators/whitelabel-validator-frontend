@@ -1,17 +1,45 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useChain } from '@cosmos-kit/react'
 import { OrchestratorForm } from '../components/OrchestratorForm'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { OrchestratorRegistrationFormData } from '../utils/validation'
-import { TransactionStatus as TxStatus } from '../types'
+import { TransactionStatus as TxStatus, ValidatorInfo } from '../types'
 import { registerOrchestratorTransaction } from '../services/transactions'
 import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
+import { QueryService } from '../services/queries'
+import { toValidatorOperatorAddress } from '../utils/address'
 
 export default function OrchestratorRegistrationPage() {
   const { address, getOfflineSignerDirect, chain } = useChain('injective')
   const { network } = useNetwork()
   const [orchestratorTxStatus, setOrchestratorTxStatus] = useState<TxStatus>({ status: 'idle' })
+  const [validator, setValidator] = useState<ValidatorInfo | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (address) {
+      loadValidator()
+    }
+  }, [address, network])
+
+  const loadValidator = async () => {
+    if (!address) return
+    
+    setLoading(true)
+    try {
+      const queryService = new QueryService(network)
+      // Derive validator operator address from wallet account (same as createValidatorTransaction)
+      const derivedValidatorAddress = toValidatorOperatorAddress(address)
+      const validatorInfo = await queryService.getValidator(derivedValidatorAddress)
+      setValidator(validatorInfo)
+    } catch (error) {
+      console.error('Failed to load validator:', error)
+      setValidator(null)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleOrchestratorSubmit = async (data: OrchestratorRegistrationFormData) => {
     if (!address || !getOfflineSignerDirect) {
@@ -67,8 +95,18 @@ export default function OrchestratorRegistrationPage() {
         <div className="error-message">
           Please connect your wallet to register an orchestrator.
         </div>
+      ) : loading ? (
+        <div>Loading validator information...</div>
+      ) : !validator ? (
+        <div className="error-message">
+          No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
+        </div>
       ) : (
         <>
+          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Validator Operator Address</h3>
+            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
+          </div>
           <OrchestratorForm
             onSubmit={handleOrchestratorSubmit}
             isSubmitting={orchestratorTxStatus.status === 'pending'}
@@ -76,6 +114,7 @@ export default function OrchestratorRegistrationPage() {
           <TransactionStatus 
             status={orchestratorTxStatus} 
             explorerUrl={explorerUrl}
+            network={network}
           />
         </>
       )}

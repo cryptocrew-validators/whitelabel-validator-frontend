@@ -1,46 +1,61 @@
-import {
-  ChainGrpcStakingApi,
-} from '@injectivelabs/sdk-ts'
 import { ValidatorInfo, OrchestratorMapping, DelegationInfo, UnbondingDelegation } from '../types'
-import { getInjectiveEndpoints } from './injective'
+import { getChainConfig } from '../config/chains'
 import { Network } from '../types'
 
 export class QueryService {
-  private grpcEndpoint: string
+  private restEndpoint: string
 
   constructor(network: Network = 'mainnet') {
-    const endpoints = getInjectiveEndpoints(network)
-    // gRPC APIs use the same endpoint format, but need to convert REST to gRPC
-    // For Injective, gRPC endpoints are typically the same base URL
-    this.grpcEndpoint = endpoints.grpc
+    const config = getChainConfig(network)
+    this.restEndpoint = config.rest
   }
 
   async getValidator(validatorAddress: string): Promise<ValidatorInfo | null> {
     try {
-      const stakingApi = new ChainGrpcStakingApi(this.grpcEndpoint)
-      const validator = await stakingApi.fetchValidator(validatorAddress)
+      // Use REST API: GET /cosmos/staking/v1beta1/validators/{validatorAddr}
+      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/validators/${validatorAddress}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        throw new Error(`Failed to fetch validator: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const validator = data.validator
       
       if (!validator) {
         return null
       }
       
+      // Extract consensus pubkey from Any type
+      let consensusPubkey = ''
+      if (validator.consensus_pubkey) {
+        // The pubkey is in Any format: { type_url: string, value: string (base64) }
+        if (validator.consensus_pubkey.value) {
+          consensusPubkey = validator.consensus_pubkey.value
+        }
+      }
+      
       return {
-        operatorAddress: validator.operatorAddress,
-        consensusPubkey: validator.consensusPubkey?.value || '',
+        operatorAddress: validator.operator_address || validatorAddress,
+        consensusPubkey,
         moniker: validator.description?.moniker || '',
         identity: validator.description?.identity,
         website: validator.description?.website,
-        securityContact: validator.description?.securityContact,
+        securityContact: validator.description?.security_contact,
         details: validator.description?.details,
         commission: {
-          rate: validator.commission?.commissionRates?.rate || '0',
-          maxRate: validator.commission?.commissionRates?.maxRate || '0',
-          maxChangeRate: validator.commission?.commissionRates?.maxChangeRate || '0',
+          rate: validator.commission?.commission_rates?.rate || '0',
+          maxRate: validator.commission?.commission_rates?.max_rate || '0',
+          maxChangeRate: validator.commission?.commission_rates?.max_change_rate || '0',
         },
-        minSelfDelegation: validator.minSelfDelegation || '0',
-        status: validator.status as any,
+        minSelfDelegation: validator.min_self_delegation || '0',
+        status: validator.status || 'BOND_STATUS_UNBONDED',
         tokens: validator.tokens || '0',
-        delegatorShares: validator.delegatorShares || '0',
+        delegatorShares: validator.delegator_shares || '0',
       }
     } catch (error) {
       console.error('Error fetching validator:', error)
@@ -72,20 +87,28 @@ export class QueryService {
 
   async getDelegation(delegatorAddress: string, validatorAddress: string): Promise<DelegationInfo | null> {
     try {
-      const stakingApi = new ChainGrpcStakingApi(this.grpcEndpoint)
-      // fetchDelegation may take a combined address or different format
-      // Using delegator address and fetching all delegations, then filtering
-      const delegations = await stakingApi.fetchDelegations(delegatorAddress)
-      const delegation = delegations.find((d: any) => d.validatorAddress === validatorAddress)
+      // Use REST API: GET /cosmos/staking/v1beta1/delegators/{delegatorAddr}/delegations/{validatorAddr}
+      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/delegators/${delegatorAddress}/delegations/${validatorAddress}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        throw new Error(`Failed to fetch delegation: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const delegation = data.delegation_response
       
       if (!delegation) {
         return null
       }
 
       return {
-        delegatorAddress: delegation.delegatorAddress || delegatorAddress,
-        validatorAddress: delegation.validatorAddress || validatorAddress,
-        shares: delegation.shares || '0',
+        delegatorAddress: delegation.delegation?.delegator_address || delegatorAddress,
+        validatorAddress: delegation.delegation?.validator_address || validatorAddress,
+        shares: delegation.delegation?.shares || '0',
         balance: delegation.balance || { denom: 'inj', amount: '0' },
       }
     } catch (error) {
@@ -96,18 +119,33 @@ export class QueryService {
 
   async getUnbondingDelegation(delegatorAddress: string, validatorAddress: string): Promise<UnbondingDelegation | null> {
     try {
-      const stakingApi = new ChainGrpcStakingApi(this.grpcEndpoint)
-      const unbondingDelegations = await stakingApi.fetchUnbondingDelegations(delegatorAddress)
-      const unbond = unbondingDelegations.find((u: any) => u.validatorAddress === validatorAddress)
+      // Use REST API: GET /cosmos/staking/v1beta1/delegators/{delegatorAddr}/unbonding_delegations/{validatorAddr}
+      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/delegators/${delegatorAddress}/unbonding_delegations/${validatorAddress}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        throw new Error(`Failed to fetch unbonding delegation: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const unbond = data.unbond
       
       if (!unbond) {
         return null
       }
 
       return {
-        delegatorAddress: unbond.delegatorAddress || delegatorAddress,
-        validatorAddress: unbond.validatorAddress || validatorAddress,
-        entries: unbond.entries || [],
+        delegatorAddress: unbond.delegator_address || delegatorAddress,
+        validatorAddress: unbond.validator_address || validatorAddress,
+        entries: unbond.entries?.map((entry: any) => ({
+          creationHeight: entry.creation_height?.toString() || '0',
+          completionTime: entry.completion_time || '',
+          initialBalance: entry.initial_balance || '0',
+          balance: entry.balance || '0',
+        })) || [],
       }
     } catch (error) {
       console.error('Error fetching unbonding delegation:', error)
@@ -117,31 +155,45 @@ export class QueryService {
 
   async getAllValidators(): Promise<ValidatorInfo[]> {
     try {
-      const stakingApi = new ChainGrpcStakingApi(this.grpcEndpoint)
-      const response = await stakingApi.fetchValidators()
+      // Use REST API: GET /cosmos/staking/v1beta1/validators
+      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/validators`
+      const response = await fetch(url)
       
-      if (!response.validators) {
-        return []
+      if (!response.ok) {
+        throw new Error(`Failed to fetch validators: ${response.status} ${response.statusText}`)
       }
-
-      return response.validators.map((validator: any) => ({
-        operatorAddress: validator.operatorAddress,
-        consensusPubkey: validator.consensusPubkey?.value || '',
-        moniker: validator.description?.moniker || '',
-        identity: validator.description?.identity,
-        website: validator.description?.website,
-        securityContact: validator.description?.securityContact,
-        details: validator.description?.details,
-        commission: {
-          rate: validator.commission?.commissionRates?.rate || '0',
-          maxRate: validator.commission?.commissionRates?.maxRate || '0',
-          maxChangeRate: validator.commission?.commissionRates?.maxChangeRate || '0',
-        },
-        minSelfDelegation: validator.minSelfDelegation || '0',
-        status: validator.status as any,
-        tokens: validator.tokens || '0',
-        delegatorShares: validator.delegatorShares || '0',
-      }))
+      
+      const data = await response.json()
+      const validators = data.validators || []
+      
+      return validators.map((validator: any) => {
+        // Extract consensus pubkey from Any type
+        let consensusPubkey = ''
+        if (validator.consensus_pubkey) {
+          if (validator.consensus_pubkey.value) {
+            consensusPubkey = validator.consensus_pubkey.value
+          }
+        }
+        
+        return {
+          operatorAddress: validator.operator_address || '',
+          consensusPubkey,
+          moniker: validator.description?.moniker || '',
+          identity: validator.description?.identity,
+          website: validator.description?.website,
+          securityContact: validator.description?.security_contact,
+          details: validator.description?.details,
+          commission: {
+            rate: validator.commission?.commission_rates?.rate || '0',
+            maxRate: validator.commission?.commission_rates?.max_rate || '0',
+            maxChangeRate: validator.commission?.commission_rates?.max_change_rate || '0',
+          },
+          minSelfDelegation: validator.min_self_delegation || '0',
+          status: validator.status || 'BOND_STATUS_UNBONDED',
+          tokens: validator.tokens || '0',
+          delegatorShares: validator.delegator_shares || '0',
+        }
+      })
     } catch (error) {
       console.error('Error fetching validators:', error)
       return []

@@ -1,28 +1,50 @@
 import { useEffect, useState } from 'react'
 import { useChain } from '@cosmos-kit/react'
+import { useNetwork } from '../contexts/NetworkContext'
+import { getChainConfig } from '../config/chains'
 
 export function BalanceDisplay() {
-  const { address, getSigningStargateClient, status } = useChain('injective')
+  const { address, status } = useChain('injective')
+  const { network } = useNetwork()
   const [balance, setBalance] = useState<string>('0')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     // Only load balance when wallet is connected and ready
-    if (address && getSigningStargateClient && status === 'Connected') {
+    if (address && status === 'Connected') {
       loadBalance()
     } else {
       setBalance('0')
     }
-  }, [address, getSigningStargateClient, status])
+  }, [address, status, network])
 
   const loadBalance = async () => {
-    if (!address || !getSigningStargateClient) return
+    if (!address) return
     
     setLoading(true)
     try {
-      const client = await getSigningStargateClient()
-      const balances = await client.getBalance(address, 'inj')
-      setBalance(balances.amount || '0')
+      const config = getChainConfig(network)
+      // Use REST API: GET /cosmos/bank/v1beta1/balances/{address}
+      const url = `${config.rest}/cosmos/bank/v1beta1/balances/${address}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Account might not exist yet, balance is 0
+          setBalance('0')
+          return
+        }
+        throw new Error(`Failed to fetch balance: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const balances = data.balances || []
+      
+      // Find the INJ balance
+      const injBalance = balances.find((b: any) => b.denom === 'inj')
+      const balanceAmount = injBalance?.amount || '0'
+      
+      setBalance(balanceAmount)
     } catch (error: any) {
       // Silently handle balance loading errors - they're not critical
       // Only log unexpected errors
