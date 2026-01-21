@@ -59,42 +59,80 @@ export async function createInjectiveSigner(
       typeUrl: '/cosmos.staking.v1beta1.MsgCreateValidator',
       fromPartial: (obj: any) => obj,
       encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgCreateValidator:', {
+          typeUrl: '/cosmos.staking.v1beta1.MsgCreateValidator',
+          message: JSON.parse(JSON.stringify(message, (_key, value) => {
+            // Convert Uint8Array to base64 for logging
+            if (value instanceof Uint8Array) {
+              return {
+                __type: 'Uint8Array',
+                base64: btoa(String.fromCharCode(...value)),
+                length: value.length,
+              }
+            }
+            return value
+          })),
+        })
+        
         const w = writer || BinaryWriter.create()
         
         // Field 1: description
         if (message.description) {
+          console.log('[ENCODER] Encoding description:', message.description)
           Description.encode(message.description, w.uint32(10).fork()).ldelim()
         }
         
         // Field 2: commission (CommissionRates)
         if (message.commission) {
+          console.log('[ENCODER] Encoding commission:', message.commission)
           CommissionRates.encode(message.commission, w.uint32(18).fork()).ldelim()
         }
         
         // Field 3: minSelfDelegation
         if (message.minSelfDelegation) {
+          console.log('[ENCODER] Encoding minSelfDelegation:', message.minSelfDelegation)
           w.uint32(26).string(message.minSelfDelegation)
         }
         
         // Field 4: delegatorAddress
         if (message.delegatorAddress) {
+          console.log('[ENCODER] Encoding delegatorAddress:', message.delegatorAddress)
           w.uint32(34).string(message.delegatorAddress)
         }
         
         // Field 5: validatorAddress
         if (message.validatorAddress) {
+          console.log('[ENCODER] Encoding validatorAddress:', message.validatorAddress)
           w.uint32(42).string(message.validatorAddress)
         }
         
         // Field 6: pubkey (Any)
         if (message.pubkey) {
+          console.log('[ENCODER] Encoding pubkey:', {
+            typeUrl: message.pubkey.typeUrl,
+            value: message.pubkey.value instanceof Uint8Array 
+              ? {
+                  __type: 'Uint8Array',
+                  base64: btoa(String.fromCharCode(...message.pubkey.value)),
+                  length: message.pubkey.value.length,
+                }
+              : message.pubkey.value,
+          })
           Any.encode(message.pubkey, w.uint32(50).fork()).ldelim()
         }
         
         // Field 7: value (Coin)
         if (message.value) {
+          console.log('[ENCODER] Encoding value:', message.value)
           Coin.encode(message.value, w.uint32(58).fork()).ldelim()
         }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded message bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
         
         return w
       },
