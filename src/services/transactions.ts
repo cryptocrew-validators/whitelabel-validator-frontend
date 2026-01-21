@@ -8,6 +8,85 @@ import type { StdFee } from '@interchainjs/types'
 import type { EncodeObject } from '@cosmjs/proto-signing'
 import { toValidatorOperatorAddress } from '../utils/address'
 
+const broadcastOptions = { mode: 'async' as const }
+const rpcErrorIndicators = ['RPC Error', 'Internal error']
+
+function isRpcErrorMessage(message: string) {
+  return rpcErrorIndicators.some((indicator) => message.includes(indicator))
+}
+
+function extractRpcErrorDetails(error: any, fallbackMessage: string, rawMessage: string) {
+  let detailedError = fallbackMessage
+  let code = error?.code
+  const responseData = error?.response?.data
+
+  if (responseData) {
+    try {
+      const parsed = typeof responseData === 'string' ? JSON.parse(responseData) : responseData
+      detailedError = parsed?.message || parsed?.error || detailedError
+      if (parsed?.code && !code) {
+        code = parsed.code
+      }
+    } catch {
+      // Keep fallback message when response data isn't JSON
+    }
+  }
+
+  if (error?.data?.message) {
+    detailedError = error.data.message
+  }
+
+  if (error?.cause?.message) {
+    detailedError = error.cause.message
+  }
+
+  const txHash =
+    rawMessage.match(/0x[a-fA-F0-9]{64}/)?.[0] ||
+    error?.txHash ||
+    error?.transactionHash ||
+    error?.data?.txHash
+
+  return {
+    detailedError,
+    code,
+    txHash,
+  }
+}
+
+function logRpcError(error: any) {
+  console.error('RPC Error details:', {
+    message: error?.message,
+    code: error?.code,
+    data: error?.data,
+    response: error?.response,
+    stack: error?.stack,
+    cause: error?.cause,
+    txHash: error?.txHash,
+    transactionHash: error?.transactionHash,
+  })
+}
+
+function buildRpcErrorMessage(error: any, errorMsg: string) {
+  const { detailedError, code, txHash } = extractRpcErrorDetails(error, errorMsg, errorMsg)
+
+  if (txHash) {
+    return (
+      `Transaction signed and broadcast, but RPC returned an error. ` +
+      `Transaction hash: ${txHash}. ` +
+      `Please check your wallet or explorer to confirm the transaction status. ` +
+      `Error: ${detailedError}`
+    )
+  }
+
+  return (
+    `RPC endpoint error during broadcast. ` +
+    `The transaction may have been signed successfully. ` +
+    `Please check your wallet transaction history or try again. ` +
+    `Error: ${detailedError} ` +
+    `(Code: ${code || 'unknown'})`
+  )
+}
+
 // Helper functions to create messages and fees for Cosmos Kit's signAndBroadcast
 export function createValidatorMessage(
   address: string,
@@ -262,12 +341,14 @@ export async function createValidatorTransaction(
     console.log('[BEFORE ENCODING] Full message object:', msg)
     
     // Use signAndBroadcast with explicit broadcast options
-    // Try 'sync' mode first, as some RPC endpoints don't support async
-    console.log('[BEFORE SIGN] Calling signAndBroadcast with:', {
-      messageCount: 1,
-      fee,
-      broadcastMode: 'sync',
-    })
+    // Try 'async' mode first, which is more reliable for RPC endpoints
+    const result = await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
     
     try {
       // Try to intercept the signing process if possible
@@ -338,55 +419,10 @@ export async function createValidatorTransaction(
     
     // For RPC errors, provide helpful message
     // The transaction might have been signed but broadcast failed
-    if (errorMsg.includes('RPC Error') || errorMsg.includes('Internal error')) {
+    if (isRpcErrorMessage(errorMsg)) {
       // Log full error details for debugging
-      console.error('RPC Error details:', {
-        message: error?.message,
-        code: error?.code,
-        data: error?.data,
-        response: error?.response,
-        stack: error?.stack,
-        // Try to extract more details from nested errors
-        cause: error?.cause,
-        // Check for transaction hash in various places
-        txHash: error?.txHash,
-        transactionHash: error?.transactionHash,
-      })
-      
-      // Try to extract more detailed error message from response
-      let detailedError = errorMsg
-      if (error?.response?.data) {
-        try {
-          const responseData = typeof error.response.data === 'string' 
-            ? JSON.parse(error.response.data) 
-            : error.response.data
-          detailedError = responseData?.message || responseData?.error || detailedError
-          console.error('RPC Response data:', responseData)
-        } catch (e) {
-          console.error('RPC Response data (raw):', error.response.data)
-        }
-      }
-      
-      // Check if error has transaction hash (some errors include it)
-      const txHashMatch = errorMsg.match(/0x[a-fA-F0-9]{64}/) || 
-                         error?.txHash || 
-                         error?.transactionHash ||
-                         error?.data?.txHash
-      if (txHashMatch) {
-        throw new Error(
-          `Transaction signed and broadcast, but RPC returned an error. ` +
-          `Transaction hash: ${txHashMatch}. ` +
-          `Please check your wallet or explorer to confirm the transaction status. ` +
-          `Error: ${detailedError}`
-        )
-      }
-      throw new Error(
-        `RPC endpoint error during broadcast. ` +
-        `The transaction may have been signed successfully. ` +
-        `Please check your wallet transaction history or try again. ` +
-        `Error: ${detailedError} ` +
-        `(Code: ${error?.code || 'unknown'})`
-      )
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
     
     // Re-throw other errors as-is
@@ -422,10 +458,13 @@ export async function registerOrchestratorTransaction(
       gas: '200000',
     }
 
-    return await signer.signAndBroadcast({
-      messages: [msg],
-      fee,
-    })
+    return await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -441,8 +480,9 @@ export async function registerOrchestratorTransaction(
     if (errorMsg.includes('unauthorized')) {
       throw new Error('You are not authorized to register orchestrator for this validator.')
     }
-    if (errorMsg.includes('RPC Error') || errorMsg.includes('Internal error')) {
-      throw new Error('RPC endpoint error during broadcast. The transaction may have been signed successfully. Please check your wallet transaction history or try again.')
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
     throw error
   }
@@ -486,10 +526,13 @@ export async function editValidatorTransaction(
       gas: '200000',
     }
 
-    return await signer.signAndBroadcast({
-      messages: [msg],
-      fee,
-    })
+    return await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -505,8 +548,9 @@ export async function editValidatorTransaction(
     if (errorMsg.includes('unauthorized')) {
       throw new Error('You are not authorized to edit this validator.')
     }
-    if (errorMsg.includes('RPC Error') || errorMsg.includes('Internal error')) {
-      throw new Error('RPC endpoint error during broadcast. The transaction may have been signed successfully. Please check your wallet transaction history or try again.')
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
     throw error
   }
@@ -545,10 +589,13 @@ export async function delegateTransaction(
       gas: '200000',
     }
 
-    return await signer.signAndBroadcast({
-      messages: [msg],
-      fee,
-    })
+    return await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -561,8 +608,9 @@ export async function delegateTransaction(
     if (errorMsg.includes('validator not found')) {
       throw new Error('Validator not found. Please verify the validator address is correct.')
     }
-    if (errorMsg.includes('RPC Error') || errorMsg.includes('Internal error')) {
-      throw new Error('RPC endpoint error during broadcast. The transaction may have been signed successfully. Please check your wallet transaction history or try again.')
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
     throw error
   }
@@ -601,10 +649,13 @@ export async function undelegateTransaction(
       gas: '200000',
     }
 
-    return await signer.signAndBroadcast({
-      messages: [msg],
-      fee,
-    })
+    return await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
@@ -620,8 +671,9 @@ export async function undelegateTransaction(
     if (errorMsg.includes('validator not found')) {
       throw new Error('Validator not found. Please verify the validator address is correct.')
     }
-    if (errorMsg.includes('RPC Error') || errorMsg.includes('Internal error')) {
-      throw new Error('RPC endpoint error during broadcast. The transaction may have been signed successfully. Please check your wallet transaction history or try again.')
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
     throw error
   }
