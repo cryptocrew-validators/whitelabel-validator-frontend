@@ -251,11 +251,11 @@ export function createOrchestratorMessage(
   }
 
   const msg: EncodeObject = {
-    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
     value: {
-      validator: data.validatorAddress,
+      sender: address,
       orchestrator: data.orchestratorAddress,
-      ethereum: data.ethereumAddress,
+      ethAddress: data.ethereumAddress,
     },
   }
 
@@ -558,18 +558,14 @@ export async function registerOrchestratorTransaction(
       ethereumAddress: data.ethereumAddress,
     })
 
-    // Derive validator operator address from the wallet account (same as createValidatorTransaction)
-    const validatorAddress = toValidatorOperatorAddress(address)
-    console.log('[ORCHESTRATOR REGISTRATION] Derived validator address:', validatorAddress)
-
-    // MsgSetOrchestratorAddress from Peggy module
+    // MsgSetOrchestratorAddresses from Peggy module
     // Note: This message type may need to be imported from Injective SDK
     const msg = {
-      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
       value: {
-        validator: validatorAddress, // Use derived validator operator address
+        sender: address, // Use account address as sender
         orchestrator: data.orchestratorAddress,
-        ethereum: data.ethereumAddress,
+        ethAddress: data.ethereumAddress,
       },
     }
 
