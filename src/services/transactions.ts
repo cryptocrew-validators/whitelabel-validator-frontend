@@ -589,18 +589,31 @@ export async function registerOrchestratorTransaction(
     console.log('[ORCHESTRATOR REGISTRATION] Broadcast options:', broadcastOptions)
     console.log('[ORCHESTRATOR REGISTRATION] Calling signAndBroadcast...')
 
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      broadcastOptions
-    )
-
-    console.log('[ORCHESTRATOR REGISTRATION] After signAndBroadcast, result:', {
-      transactionHash: result.transactionHash,
-      broadcastResponse: result.broadcastResponse,
-    })
+    let result
+    try {
+      result = await signer.signAndBroadcast(
+        {
+          messages: [msg],
+          fee,
+        },
+        broadcastOptions
+      )
+      console.log('[ORCHESTRATOR REGISTRATION] After signAndBroadcast, result:', {
+        transactionHash: result.transactionHash,
+        broadcastResponse: result.broadcastResponse,
+      })
+    } catch (signError: any) {
+      console.error('[ORCHESTRATOR REGISTRATION] Error during signAndBroadcast:', signError)
+      console.error('[ORCHESTRATOR REGISTRATION] Sign error details:', {
+        message: signError?.message,
+        code: signError?.code,
+        data: signError?.data,
+        response: signError?.response,
+        stack: signError?.stack,
+        cause: signError?.cause,
+      })
+      throw signError
+    }
     
     // For commit mode, check the broadcastResponse first
     const broadcastResponse = result.broadcastResponse as any

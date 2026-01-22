@@ -9,6 +9,7 @@ import ValidatorEditPage from './pages/ValidatorEditPage'
 import DelegationPage from './pages/DelegationPage'
 import ValidatorStatusPage from './pages/ValidatorStatusPage'
 import OrchestratorRegistrationPage from './pages/OrchestratorRegistrationPage'
+import UnjailPage from './pages/UnjailPage'
 import { getInjectiveChainConfig } from './config/chains'
 import { WalletConnect } from './components/WalletConnect'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -171,6 +172,7 @@ function AppContent() {
                 <Link to="/orchestrator">Register Orchestrator</Link>
                 <Link to="/edit">Edit Validator</Link>
                 <Link to="/delegation">Delegation</Link>
+                <Link to="/unjail">Unjail</Link>
                 <Link to="/status">Status</Link>
                 <div className="wallet-section">
                   <NetworkSelector network={network} onNetworkChange={setNetwork} />
@@ -184,6 +186,7 @@ function AppContent() {
                   <Route path="/orchestrator" element={<OrchestratorRegistrationPage />} />
                   <Route path="/edit" element={<ValidatorEditPage />} />
                   <Route path="/delegation" element={<DelegationPage />} />
+                  <Route path="/unjail" element={<UnjailPage />} />
                   <Route path="/status" element={<ValidatorStatusPage />} />
                 </Routes>
               </main>

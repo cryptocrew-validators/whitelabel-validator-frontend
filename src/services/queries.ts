@@ -87,8 +87,8 @@ export class QueryService {
 
   async getDelegation(delegatorAddress: string, validatorAddress: string): Promise<DelegationInfo | null> {
     try {
-      // Use REST API: GET /cosmos/staking/v1beta1/delegators/{delegatorAddr}/delegations/{validatorAddr}
-      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/delegators/${delegatorAddress}/delegations/${validatorAddress}`
+      // Use REST API: GET /cosmos/staking/v1beta1/validators/{validator_addr}/delegations/{delegator_addr}
+      const url = `${this.restEndpoint}/cosmos/staking/v1beta1/validators/${validatorAddress}/delegations/${delegatorAddress}`
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -99,17 +99,51 @@ export class QueryService {
       }
       
       const data = await response.json()
+      console.log('[DELEGATION] Full API response:', JSON.stringify(data, null, 2))
+      
       const delegation = data.delegation_response
       
       if (!delegation) {
+        console.warn('[DELEGATION] No delegation_response in API response')
         return null
       }
+
+      // The balance should be in delegation_response.balance
+      // According to Cosmos SDK REST API, the structure is:
+      // {
+      //   "delegation_response": {
+      //     "delegation": { ... },
+      //     "balance": { "denom": "...", "amount": "..." }
+      //   }
+      // }
+      let balance = delegation.balance
+      
+      // Ensure balance has the correct structure
+      if (balance && typeof balance === 'object') {
+        // Make sure we have denom and amount
+        if (!balance.denom) {
+          balance.denom = 'inj'
+        }
+        if (!balance.amount || balance.amount === '0') {
+          // If amount is missing or 0, check if it's in a different format
+          console.warn('[DELEGATION] Balance amount is missing or 0, checking alternative formats')
+        }
+      } else {
+        // Balance might be missing entirely
+        console.warn('[DELEGATION] Balance not found in expected location, using default')
+        balance = { denom: 'inj', amount: '0' }
+      }
+
+      // Log the balance we're using
+      console.log('[DELEGATION] Parsed balance:', balance)
+      console.log('[DELEGATION] Balance amount value:', balance.amount)
+      console.log('[DELEGATION] Balance denom:', balance.denom)
 
       return {
         delegatorAddress: delegation.delegation?.delegator_address || delegatorAddress,
         validatorAddress: delegation.delegation?.validator_address || validatorAddress,
         shares: delegation.delegation?.shares || '0',
-        balance: delegation.balance || { denom: 'inj', amount: '0' },
+        balance: balance || { denom: 'inj', amount: '0' },
       }
     } catch (error) {
       console.error('Error fetching delegation:', error)

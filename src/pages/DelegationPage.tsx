@@ -15,8 +15,7 @@ import { getChainConfig } from '../config/chains'
 export default function DelegationPage() {
   const { address, getOfflineSignerDirect, chain } = useChain('injective')
   const { network } = useNetwork()
-  const [delegateTxStatus, setDelegateTxStatus] = useState<TxStatus>({ status: 'idle' })
-  const [undelegateTxStatus, setUndelegateTxStatus] = useState<TxStatus>({ status: 'idle' })
+  const [txStatus, setTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [validatorAddress, setValidatorAddress] = useState<string>('')
   const [validator, setValidator] = useState<ValidatorInfo | null>(null)
   const [delegation, setDelegation] = useState<DelegationInfo | null>(null)
@@ -123,12 +122,12 @@ export default function DelegationPage() {
 
   const handleDelegate = async (data: DelegationFormData) => {
     if (!address || !getOfflineSignerDirect) {
-      setDelegateTxStatus({ status: 'error', error: 'Wallet not connected' })
+      setTxStatus({ status: 'error', error: 'Wallet not connected' })
       return
     }
 
     try {
-      setDelegateTxStatus({ status: 'pending' })
+      setTxStatus({ status: 'pending' })
       
       // Get direct offline signer from Cosmos Kit for protobuf signing
       const offlineSigner = getOfflineSignerDirect()
@@ -142,7 +141,7 @@ export default function DelegationPage() {
       
       // Only proceed if transaction succeeded (code 0)
       if (result.transactionHash) {
-        setDelegateTxStatus({ 
+        setTxStatus({ 
           status: 'success', 
           hash: result.transactionHash,
           rawLog: (result as any).rawLog,
@@ -157,7 +156,7 @@ export default function DelegationPage() {
       console.error('Delegation error:', error)
       // Try to extract raw log from error if available
       const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
-      setDelegateTxStatus({ 
+      setTxStatus({ 
         status: 'error', 
         error: error.message || 'Failed to delegate',
         rawLog: rawLog,
@@ -167,12 +166,12 @@ export default function DelegationPage() {
 
   const handleUndelegate = async (data: DelegationFormData) => {
     if (!address || !getOfflineSignerDirect) {
-      setUndelegateTxStatus({ status: 'error', error: 'Wallet not connected' })
+      setTxStatus({ status: 'error', error: 'Wallet not connected' })
       return
     }
 
     try {
-      setUndelegateTxStatus({ status: 'pending' })
+      setTxStatus({ status: 'pending' })
       
       // Get direct offline signer from Cosmos Kit for protobuf signing
       const offlineSigner = getOfflineSignerDirect()
@@ -186,7 +185,7 @@ export default function DelegationPage() {
       
       // Only proceed if transaction succeeded (code 0)
       if (result.transactionHash) {
-        setUndelegateTxStatus({ 
+        setTxStatus({ 
           status: 'success', 
           hash: result.transactionHash,
           rawLog: (result as any).rawLog,
@@ -201,7 +200,7 @@ export default function DelegationPage() {
       console.error('Undelegation error:', error)
       // Try to extract raw log from error if available
       const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
-      setUndelegateTxStatus({ 
+      setTxStatus({ 
         status: 'error', 
         error: error.message || 'Failed to undelegate',
         rawLog: rawLog,
@@ -242,7 +241,8 @@ export default function DelegationPage() {
                 <div className="info-section">
                   <h3>Current Delegation</h3>
                   <p>Shares: {delegation.shares}</p>
-                  <p>Balance: {delegation.balance.amount} {delegation.balance.denom}</p>
+                  <p>Balance (raw): {delegation.balance.amount} {delegation.balance.denom}</p>
+                  <p>Balance (INJ): {(parseFloat(delegation.balance.amount) / 1e18).toFixed(4)} INJ</p>
                 </div>
               )}
 
@@ -261,25 +261,20 @@ export default function DelegationPage() {
               <DelegateForm
                 validatorAddress={validatorAddress}
                 onSubmit={handleDelegate}
-                isSubmitting={delegateTxStatus.status === 'pending'}
+                isSubmitting={txStatus.status === 'pending'}
                 availableBalance={availableBalance}
-              />
-              <TransactionStatus 
-                status={delegateTxStatus} 
-                explorerUrl={explorerUrl}
-                network={network}
               />
 
               <UndelegateForm
                 validatorAddress={validatorAddress}
                 onSubmit={handleUndelegate}
-                isSubmitting={undelegateTxStatus.status === 'pending'}
+                isSubmitting={txStatus.status === 'pending'}
                 currentDelegation={delegation}
               />
+              
               <TransactionStatus 
-                status={undelegateTxStatus} 
+                status={txStatus} 
                 explorerUrl={explorerUrl}
-                network={network}
               />
             </>
           )}
