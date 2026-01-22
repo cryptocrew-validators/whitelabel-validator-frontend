@@ -21,7 +21,7 @@ export function ValidatorEditForm({ validator, onSubmit, isSubmitting }: Validat
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<ValidatorEditFormData>({
     resolver: zodResolver(validatorEditSchema),
     defaultValues: {
@@ -34,8 +34,17 @@ export function ValidatorEditForm({ validator, onSubmit, isSubmitting }: Validat
     },
   })
 
+  const handleFormSubmit = (data: ValidatorEditFormData) => {
+    const submission: ValidatorEditFormData = {
+      ...data,
+      commissionRate: dirtyFields.commissionRate ? data.commissionRate : undefined,
+    }
+
+    return onSubmit(submission)
+  }
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="validator-edit-form">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="validator-edit-form">
 
       <div className="form-group">
         <label>
