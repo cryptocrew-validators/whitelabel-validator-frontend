@@ -1,18 +1,18 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, ReactNode } from 'react'
 import { Network } from '../types'
 
 interface NetworkContextType {
   network: Network
-  setNetwork: (network: Network) => void
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined)
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
-  const [network, setNetwork] = useState<Network>('mainnet')
+  // Always use mainnet - network selector removed
+  const network: Network = 'mainnet'
 
   return (
-    <NetworkContext.Provider value={{ network, setNetwork }}>
+    <NetworkContext.Provider value={{ network }}>
       {children}
     </NetworkContext.Provider>
   )

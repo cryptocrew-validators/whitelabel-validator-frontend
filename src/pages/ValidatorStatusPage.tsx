@@ -70,17 +70,11 @@ export default function ValidatorStatusPage() {
           No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
         </div>
       ) : (
-        <>
-          <div className="info-section" style={{ marginTop: '1.5rem', marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Operator Address</h3>
-            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
-          </div>
-          <ValidatorInfo
-            validator={validator}
-            orchestrator={orchestrator}
-            loading={false}
-          />
-        </>
+        <ValidatorInfo
+          validator={validator}
+          orchestrator={orchestrator}
+          loading={false}
+        />
       )}
     </div>
   )

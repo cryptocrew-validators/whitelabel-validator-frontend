@@ -133,10 +133,6 @@ export default function OrchestratorRegistrationPage() {
             explorerUrl={explorerUrl}
           />
           <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Operator Address</h3>
-            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
-          </div>
-          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Registered Orchestrator</h3>
             <p style={{ marginTop: '0.5rem' }}>
               <strong>Orchestrator Address:</strong>
@@ -156,10 +152,6 @@ export default function OrchestratorRegistrationPage() {
         </>
       ) : (
         <>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Operator Address</h3>
-            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
-          </div>
           <OrchestratorForm
             onSubmit={handleOrchestratorSubmit}
             isSubmitting={orchestratorTxStatus.status === 'pending'}

@@ -14,12 +14,11 @@ import { getInjectiveChainConfig } from './config/chains'
 import { WalletConnect } from './components/WalletConnect'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { NetworkProvider, useNetwork } from './contexts/NetworkContext'
-import { NetworkSelector } from './components/NetworkSelector'
 import './App.css'
 
 function AppContent() {
   console.log('App: Component rendering')
-  const { network, setNetwork } = useNetwork()
+  const { network } = useNetwork()
   const [wallets, setWallets] = useState<any[]>([])
   const [walletsLoading, setWalletsLoading] = useState(true)
   
@@ -85,10 +84,6 @@ function AppContent() {
     loadWallets()
   }, [])
   
-  useEffect(() => {
-    // Reload wallets when network changes (though wallets should work for both)
-    console.log('App: Network changed to:', network)
-  }, [network])
   
   try {
     console.log('App: Getting chain config for network:', network)
@@ -175,7 +170,6 @@ function AppContent() {
                 <Link to="/unjail">Unjail</Link>
                 <Link to="/status">Status</Link>
                 <div className="wallet-section">
-                  <NetworkSelector network={network} onNetworkChange={setNetwork} />
                   <WalletConnect />
                 </div>
               </nav>

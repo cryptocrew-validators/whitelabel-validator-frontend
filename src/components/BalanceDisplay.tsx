@@ -2,21 +2,45 @@ import { useEffect, useState } from 'react'
 import { useChain } from '@cosmos-kit/react'
 import { useNetwork } from '../contexts/NetworkContext'
 import { getChainConfig } from '../config/chains'
+import { QueryService } from '../services/queries'
+import { toValidatorOperatorAddress } from '../utils/address'
 
 export function BalanceDisplay() {
   const { address, status } = useChain('injective')
   const { network } = useNetwork()
   const [balance, setBalance] = useState<string>('0')
   const [loading, setLoading] = useState(false)
+  const [validatorOperatorAddress, setValidatorOperatorAddress] = useState<string | null>(null)
 
   useEffect(() => {
     // Only load balance when wallet is connected and ready
     if (address && status === 'Connected') {
       loadBalance()
+      loadValidator()
     } else {
       setBalance('0')
+      setValidatorOperatorAddress(null)
     }
   }, [address, status, network])
+
+  const loadValidator = async () => {
+    if (!address) return
+    
+    try {
+      const queryService = new QueryService(network)
+      const derivedValidatorAddress = toValidatorOperatorAddress(address)
+      const validatorInfo = await queryService.getValidator(derivedValidatorAddress)
+      
+      if (validatorInfo) {
+        setValidatorOperatorAddress(validatorInfo.operatorAddress)
+      } else {
+        setValidatorOperatorAddress(null)
+      }
+    } catch (error) {
+      // Silently handle validator loading errors
+      setValidatorOperatorAddress(null)
+    }
+  }
 
   const loadBalance = async () => {
     if (!address) return
@@ -72,8 +96,20 @@ export function BalanceDisplay() {
 
   return (
     <div className="balance-display">
-      <span className="balance-label">Balance:</span>
-      <span className="balance-value">{formattedBalance}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <span className="balance-label">Balance:</span>
+          <span className="balance-value">{formattedBalance}</span>
+        </div>
+        {validatorOperatorAddress && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', alignItems: 'flex-end', marginTop: '0.25rem' }}>
+            <span style={{ fontSize: '0.75rem', color: '#aaa' }}>Validator:</span>
+            <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#4a9eff', wordBreak: 'break-all', textAlign: 'right' }}>
+              {validatorOperatorAddress}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

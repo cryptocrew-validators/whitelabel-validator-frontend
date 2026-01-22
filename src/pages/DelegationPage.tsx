@@ -223,11 +223,6 @@ export default function DelegationPage() {
         </div>
       ) : (
         <>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Operator Address</h3>
-            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
-          </div>
-
           {loading ? (
             <div>Loading delegation information...</div>
           ) : (

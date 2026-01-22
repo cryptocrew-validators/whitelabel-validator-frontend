@@ -121,9 +121,7 @@ export default function ValidatorRegistrationPage() {
             explorerUrl={explorerUrl}
           />
           <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Operator Address</h3>
-            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingValidator.operatorAddress}</p>
-            <p style={{ marginTop: '0.5rem', color: '#aaa' }}>
+            <p style={{ color: '#aaa' }}>
               Moniker: {existingValidator.moniker || 'N/A'}
             </p>
           </div>
