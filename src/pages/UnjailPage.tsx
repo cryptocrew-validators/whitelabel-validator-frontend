@@ -124,7 +124,16 @@ export default function UnjailPage() {
         </div>
       ) : (
         <>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+          {!validator.jailed && (
+            <TransactionStatus 
+              status={{
+                status: 'info',
+                info: 'Your validator is not jailed. Unjail is only available for jailed validators.',
+              }}
+              explorerUrl={explorerUrl}
+            />
+          )}
+          <div className="info-section" style={{ marginTop: '1.5rem', marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Validator Operator Address</h3>
             <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
           </div>
@@ -159,18 +168,14 @@ export default function UnjailPage() {
                 {txStatus.status === 'pending' ? 'Unjailing...' : 'Unjail Validator'}
               </button>
             </div>
-          ) : (
-            <div className="info-section" style={{ padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-              <p style={{ color: '#4CAF50' }}>
-                Your validator is not jailed. Unjail is only available for jailed validators.
-              </p>
-            </div>
-          )}
+          ) : null}
 
-          <TransactionStatus 
-            status={txStatus} 
-            explorerUrl={explorerUrl}
-          />
+          {validator.jailed && (
+            <TransactionStatus 
+              status={txStatus} 
+              explorerUrl={explorerUrl}
+            />
+          )}
         </>
       )}
     </div>

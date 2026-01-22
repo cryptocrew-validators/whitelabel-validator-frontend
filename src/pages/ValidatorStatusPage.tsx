@@ -28,12 +28,17 @@ export default function ValidatorStatusPage() {
       const queryService = new QueryService(network)
       // Derive validator operator address from wallet account (same as createValidatorTransaction)
       const derivedValidatorAddress = toValidatorOperatorAddress(address)
-      const [validatorInfo, orchestratorInfo] = await Promise.all([
+      const [validatorInfo, orchestratorInfo, slashingParams] = await Promise.all([
         queryService.getValidator(derivedValidatorAddress),
         queryService.getOrchestratorMapping(derivedValidatorAddress),
+        queryService.getSlashingParams(),
       ])
       
       if (validatorInfo) {
+        // Add slashing params to validator info
+        if (slashingParams) {
+          validatorInfo.slashingParams = slashingParams
+        }
         setValidator(validatorInfo)
         setValidatorAddress(derivedValidatorAddress)
       } else {
@@ -66,7 +71,7 @@ export default function ValidatorStatusPage() {
         </div>
       ) : (
         <>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+          <div className="info-section" style={{ marginTop: '1.5rem', marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Validator Operator Address</h3>
             <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
           </div>

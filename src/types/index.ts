@@ -16,6 +16,18 @@ export interface ValidatorInfo {
   jailed: boolean
   tokens: string
   delegatorShares: string
+  slashingInfo?: {
+    missedBlocksCounter: string
+    tombstoned: boolean
+    jailedUntil?: string
+  }
+  slashingParams?: {
+    signedBlocksWindow: string
+    minSignedPerWindow: string
+    downtimeJailDuration: string
+    slashFractionDoubleSign: string
+    slashFractionDowntime: string
+  }
 }
 
 export interface OrchestratorMapping {
@@ -46,9 +58,11 @@ export interface UnbondingDelegation {
 }
 
 export interface TransactionStatus {
-  status: 'idle' | 'pending' | 'success' | 'error'
+  status: 'idle' | 'pending' | 'success' | 'error' | 'warning' | 'info'
   hash?: string
   error?: string
+  warning?: string // Warning message
+  info?: string // Info message
   rawLog?: string // Raw transaction log from the chain
 }
 

@@ -125,15 +125,19 @@ export default function OrchestratorRegistrationPage() {
         </div>
       ) : existingOrchestrator ? (
         <>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+          <TransactionStatus 
+            status={{
+              status: 'warning',
+              warning: 'An orchestrator has already been registered for this wallet. Orchestrator addresses cannot be changed once registered.',
+            }}
+            explorerUrl={explorerUrl}
+          />
+          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Validator Operator Address</h3>
             <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
           </div>
-          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Registered Orchestrator</h3>
-            <p style={{ color: '#4CAF50', marginBottom: '0.5rem' }}>
-              An orchestrator has already been registered for this wallet.
-            </p>
             <p style={{ marginTop: '0.5rem' }}>
               <strong>Orchestrator Address:</strong>
               <br />
@@ -143,9 +147,6 @@ export default function OrchestratorRegistrationPage() {
               <strong>Ethereum Address:</strong>
               <br />
               <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingOrchestrator.ethereumAddress}</span>
-            </p>
-            <p style={{ marginTop: '1rem', color: '#aaa', fontSize: '0.9em' }}>
-              Note: Orchestrator addresses cannot be changed once registered.
             </p>
           </div>
           <TransactionStatus 

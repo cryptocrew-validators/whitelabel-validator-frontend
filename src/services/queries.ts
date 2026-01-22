@@ -334,4 +334,77 @@ export class QueryService {
       return []
     }
   }
+
+  async getSlashingSigningInfo(validatorConsensusAddress: string): Promise<{
+    missedBlocksCounter: string
+    tombstoned: boolean
+    jailedUntil?: string
+  } | null> {
+    try {
+      // Use REST API: GET /cosmos/slashing/v1beta1/signing_infos/{consAddress}
+      // Note: This requires the consensus address (valcons), not the operator address
+      const url = `${this.restEndpoint}/cosmos/slashing/v1beta1/signing_infos/${validatorConsensusAddress}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        throw new Error(`Failed to fetch signing info: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const signingInfo = data.val_signing_info
+      
+      if (!signingInfo) {
+        return null
+      }
+      
+      return {
+        missedBlocksCounter: signingInfo.missed_blocks_counter || '0',
+        tombstoned: signingInfo.tombstoned === true,
+        jailedUntil: signingInfo.jailed_until,
+      }
+    } catch (error) {
+      console.error('Error fetching slashing signing info:', error)
+      return null
+    }
+  }
+
+
+  async getSlashingParams(): Promise<{
+    signedBlocksWindow: string
+    minSignedPerWindow: string
+    downtimeJailDuration: string
+    slashFractionDoubleSign: string
+    slashFractionDowntime: string
+  } | null> {
+    try {
+      // Use REST API: GET /cosmos/slashing/v1beta1/params
+      const url = `${this.restEndpoint}/cosmos/slashing/v1beta1/params`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch slashing params: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const params = data.params
+      
+      if (!params) {
+        return null
+      }
+      
+      return {
+        signedBlocksWindow: params.signed_blocks_window || '0',
+        minSignedPerWindow: params.min_signed_per_window || '0',
+        downtimeJailDuration: params.downtime_jail_duration || '',
+        slashFractionDoubleSign: params.slash_fraction_double_sign || '0',
+        slashFractionDowntime: params.slash_fraction_downtime || '0',
+      }
+    } catch (error) {
+      console.error('Error fetching slashing params:', error)
+      return null
+    }
+  }
 }

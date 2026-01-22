@@ -113,11 +113,15 @@ export default function ValidatorRegistrationPage() {
         <div>Checking for existing validator...</div>
       ) : existingValidator && validatorTxStatus.status !== 'success' ? (
         <>
-          <div className="error-message">
-            A validator has already been registered with this wallet. You cannot register another validator with the same wallet address.
-          </div>
+          <TransactionStatus 
+            status={{
+              status: 'warning',
+              warning: 'A validator has already been registered with this wallet. You cannot register another validator with the same wallet address.',
+            }}
+            explorerUrl={explorerUrl}
+          />
           <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Existing Validator Operator Address</h3>
+            <h3>Validator Operator Address</h3>
             <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingValidator.operatorAddress}</p>
             <p style={{ marginTop: '0.5rem', color: '#aaa' }}>
               Moniker: {existingValidator.moniker || 'N/A'}
