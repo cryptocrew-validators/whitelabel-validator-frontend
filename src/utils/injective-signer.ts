@@ -200,34 +200,34 @@ export async function createInjectiveSigner(
       },
     },
     {
-      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
       fromPartial: (obj: any) => obj,
       encode: (message: any, writer?: BinaryWriter) => {
-        console.log('[ENCODER] Encoding MsgSetOrchestratorAddress:', {
-          typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+        console.log('[ENCODER] Encoding MsgSetOrchestratorAddresses:', {
+          typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
           message,
         })
         
         const w = writer || BinaryWriter.create()
         
-        // Field 1: validator (string)
-        if (message.validator) {
-          console.log('[ENCODER] Encoding validator:', message.validator)
-          w.uint32(10).string(message.validator)
+        // Field 1: sender (string)
+        if (message.sender) {
+          console.log('[ENCODER] Encoding sender:', message.sender)
+          w.uint32(10).string(message.sender)
         }
         // Field 2: orchestrator (string)
         if (message.orchestrator) {
           console.log('[ENCODER] Encoding orchestrator:', message.orchestrator)
           w.uint32(18).string(message.orchestrator)
         }
-        // Field 3: ethereum (string)
-        if (message.ethereum) {
-          console.log('[ENCODER] Encoding ethereum:', message.ethereum)
-          w.uint32(26).string(message.ethereum)
+        // Field 3: ethAddress (string)
+        if (message.ethAddress) {
+          console.log('[ENCODER] Encoding ethAddress:', message.ethAddress)
+          w.uint32(26).string(message.ethAddress)
         }
         
         const encoded = w.finish()
-        console.log('[ENCODER] Encoded MsgSetOrchestratorAddress bytes:', {
+        console.log('[ENCODER] Encoded MsgSetOrchestratorAddresses bytes:', {
           length: encoded.length,
           base64: btoa(String.fromCharCode(...encoded)),
           hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
