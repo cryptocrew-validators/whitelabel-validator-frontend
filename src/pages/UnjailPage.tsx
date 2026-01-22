@@ -35,48 +35,13 @@ export default function UnjailPage() {
         return
       }
 
-      const identity = validator.identity.trim()
-      console.log('[UnjailPage] Loading Keybase picture for identity:', identity)
+      const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
+      const pictureUrl = await loadCachedPicture(validator.identity)
       
-      try {
-        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
-        // Use the lookup API with key_suffix parameter
-        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
-        console.log('[UnjailPage] Fetching Keybase lookup API:', lookupUrl)
-        const response = await fetch(lookupUrl)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('[UnjailPage] Keybase lookup API response:', data)
-          
-          if (data?.status?.code === 0 && data?.them?.length > 0) {
-            const user = data.them[0]
-            if (user?.pictures?.primary?.url) {
-              const pictureUrl = user.pictures.primary.url
-              console.log('[UnjailPage] Found Keybase picture URL:', pictureUrl)
-              setProfileImageUrl(pictureUrl)
-              setProfileImageError(false)
-              return
-            }
-          }
-        }
-        
-        // Fallback: try direct URL for username
-        const directUrl = `https://keybase.io/${identity}/picture`
-        console.log('[UnjailPage] Trying direct Keybase URL:', directUrl)
-        const directResponse = await fetch(directUrl, { method: 'HEAD' })
-        if (directResponse.ok) {
-          setProfileImageUrl(directUrl)
-          setProfileImageError(false)
-          return
-        }
-        
-        // No picture found
-        console.log('[UnjailPage] No Keybase picture found')
-        setProfileImageUrl(null)
+      if (pictureUrl) {
+        setProfileImageUrl(pictureUrl)
         setProfileImageError(false)
-      } catch (error) {
-        console.error('[UnjailPage] Error loading Keybase picture:', error)
+      } else {
         setProfileImageUrl(null)
         setProfileImageError(false)
       }
@@ -260,35 +225,27 @@ export default function UnjailPage() {
                   </span>
                 </div>
               </div>
+
+              {validator.jailed && (
+                <div style={{ marginTop: '1.5rem' }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '1rem', color: 'var(--accent-primary)', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.01em', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>Unjail Validator</h3>
+                  <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                    Your validator is currently jailed. Click the button below to unjail it.
+                  </p>
+                  <form className="unjail-form" onSubmit={(e) => { e.preventDefault(); handleUnjail(); }}>
+                    <button
+                      type="submit"
+                      disabled={txStatus.status === 'pending'}
+                    >
+                      {txStatus.status === 'pending' ? 'Unjailing...' : 'Unjail Validator'}
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
           </div>
 
-          {validator.jailed ? (
-            <div className="form-section" style={{ padding: '1.5rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-              <h3>Unjail Validator</h3>
-              <p style={{ marginBottom: '1rem', color: '#aaa' }}>
-                Your validator is currently jailed. Click the button below to unjail it.
-              </p>
-              <button
-                onClick={handleUnjail}
-                disabled={txStatus.status === 'pending'}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  fontSize: '1rem',
-                  backgroundColor: txStatus.status === 'pending' ? '#666' : '#4a9eff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: txStatus.status === 'pending' ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                }}
-              >
-                {txStatus.status === 'pending' ? 'Unjailing...' : 'Unjail Validator'}
-              </button>
-            </div>
-          ) : null}
-
-          {validator.jailed && (
+          {txStatus.status !== 'idle' && (
             <TransactionStatus 
               status={txStatus} 
               explorerUrl={explorerUrl}

@@ -39,48 +39,13 @@ export default function OrchestratorRegistrationPage() {
         return
       }
 
-      const identity = validator.identity.trim()
-      console.log('[OrchestratorRegistrationPage] Loading Keybase picture for identity:', identity)
+      const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
+      const pictureUrl = await loadCachedPicture(validator.identity)
       
-      try {
-        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
-        // Use the lookup API with key_suffix parameter
-        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
-        console.log('[OrchestratorRegistrationPage] Fetching Keybase lookup API:', lookupUrl)
-        const response = await fetch(lookupUrl)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('[OrchestratorRegistrationPage] Keybase lookup API response:', data)
-          
-          if (data?.status?.code === 0 && data?.them?.length > 0) {
-            const user = data.them[0]
-            if (user?.pictures?.primary?.url) {
-              const pictureUrl = user.pictures.primary.url
-              console.log('[OrchestratorRegistrationPage] Found Keybase picture URL:', pictureUrl)
-              setProfileImageUrl(pictureUrl)
-              setProfileImageError(false)
-              return
-            }
-          }
-        }
-        
-        // Fallback: try direct URL for username
-        const directUrl = `https://keybase.io/${identity}/picture`
-        console.log('[OrchestratorRegistrationPage] Trying direct Keybase URL:', directUrl)
-        const directResponse = await fetch(directUrl, { method: 'HEAD' })
-        if (directResponse.ok) {
-          setProfileImageUrl(directUrl)
-          setProfileImageError(false)
-          return
-        }
-        
-        // No picture found
-        console.log('[OrchestratorRegistrationPage] No Keybase picture found')
-        setProfileImageUrl(null)
+      if (pictureUrl) {
+        setProfileImageUrl(pictureUrl)
         setProfileImageError(false)
-      } catch (error) {
-        console.error('[OrchestratorRegistrationPage] Error loading Keybase picture:', error)
+      } else {
         setProfileImageUrl(null)
         setProfileImageError(false)
       }
@@ -179,7 +144,7 @@ export default function OrchestratorRegistrationPage() {
 
   return (
     <div className="page">
-      <h1>Register Orchestrator</h1>
+      <h1>Orchestrator Registration</h1>
       
       {!address ? (
         <div className="error-message">

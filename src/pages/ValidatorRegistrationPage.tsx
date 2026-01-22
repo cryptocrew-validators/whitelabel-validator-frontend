@@ -36,48 +36,13 @@ export default function ValidatorRegistrationPage() {
         return
       }
 
-      const identity = existingValidator.identity.trim()
-      console.log('[ValidatorRegistrationPage] Loading Keybase picture for identity:', identity)
+      const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
+      const pictureUrl = await loadCachedPicture(existingValidator.identity)
       
-      try {
-        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
-        // Use the lookup API with key_suffix parameter
-        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
-        console.log('[ValidatorRegistrationPage] Fetching Keybase lookup API:', lookupUrl)
-        const response = await fetch(lookupUrl)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('[ValidatorRegistrationPage] Keybase lookup API response:', data)
-          
-          if (data?.status?.code === 0 && data?.them?.length > 0) {
-            const user = data.them[0]
-            if (user?.pictures?.primary?.url) {
-              const pictureUrl = user.pictures.primary.url
-              console.log('[ValidatorRegistrationPage] Found Keybase picture URL:', pictureUrl)
-              setProfileImageUrl(pictureUrl)
-              setProfileImageError(false)
-              return
-            }
-          }
-        }
-        
-        // Fallback: try direct URL for username
-        const directUrl = `https://keybase.io/${identity}/picture`
-        console.log('[ValidatorRegistrationPage] Trying direct Keybase URL:', directUrl)
-        const directResponse = await fetch(directUrl, { method: 'HEAD' })
-        if (directResponse.ok) {
-          setProfileImageUrl(directUrl)
-          setProfileImageError(false)
-          return
-        }
-        
-        // No picture found
-        console.log('[ValidatorRegistrationPage] No Keybase picture found')
-        setProfileImageUrl(null)
+      if (pictureUrl) {
+        setProfileImageUrl(pictureUrl)
         setProfileImageError(false)
-      } catch (error) {
-        console.error('[ValidatorRegistrationPage] Error loading Keybase picture:', error)
+      } else {
         setProfileImageUrl(null)
         setProfileImageError(false)
       }

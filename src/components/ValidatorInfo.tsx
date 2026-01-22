@@ -25,7 +25,7 @@ export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInf
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
   const [profileImageError, setProfileImageError] = useState(false)
   
-  // Load Keybase profile picture
+  // Load Keybase profile picture with caching
   useEffect(() => {
     const loadKeybasePicture = async () => {
       if (!validator.identity || validator.identity.trim() === '') {
@@ -34,58 +34,13 @@ export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInf
         return
       }
 
-      const identity = validator.identity.trim()
-      console.log('[ValidatorInfo] Loading Keybase picture for identity:', identity)
+      const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
+      const pictureUrl = await loadCachedPicture(validator.identity)
       
-      try {
-        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
-        // Use the lookup API with key_suffix parameter
-        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
-        console.log('[ValidatorInfo] Fetching Keybase lookup API:', lookupUrl)
-        const response = await fetch(lookupUrl)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('[ValidatorInfo] Keybase lookup API response:', data)
-          
-          // Check if we got a valid user
-          if (data.status?.code === 0 && data.them && data.them.length > 0) {
-            const user = data.them[0]
-            // Try to get the picture URL from various possible locations
-            const pictureUrl = 
-              user.pictures?.primary?.url ||
-              user.pictures?.primary?.basename ||
-              (user.pictures?.primary && `https://keybase.io/${user.basename}/picture`)
-            
-            if (pictureUrl) {
-              console.log('[ValidatorInfo] Found Keybase picture URL:', pictureUrl)
-              setProfileImageUrl(pictureUrl)
-              setProfileImageError(false)
-              return
-            }
-          }
-        }
-        
-        // Fallback: try direct picture URL format (for usernames)
-        console.log('[ValidatorInfo] Lookup API failed, trying direct URL')
-        const directUrl = `https://keybase.io/${identity}/picture`
-        
-        // Test if image exists by creating an image element
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => {
-          console.log('[ValidatorInfo] Direct URL loaded successfully:', directUrl)
-          setProfileImageUrl(directUrl)
-          setProfileImageError(false)
-        }
-        img.onerror = () => {
-          console.log('[ValidatorInfo] All Keybase methods failed')
-          setProfileImageUrl(null)
-          setProfileImageError(true)
-        }
-        img.src = directUrl
-      } catch (error) {
-        console.error('[ValidatorInfo] Failed to load Keybase picture:', error)
+      if (pictureUrl) {
+        setProfileImageUrl(pictureUrl)
+        setProfileImageError(false)
+      } else {
         setProfileImageUrl(null)
         setProfileImageError(true)
       }

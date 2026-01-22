@@ -5,7 +5,12 @@ import { getChainConfig } from '../config/chains'
 import { QueryService } from '../services/queries'
 import { toValidatorOperatorAddress } from '../utils/address'
 
-export function BalanceDisplay() {
+interface BalanceDisplayProps {
+  onDisconnect?: () => void
+  isDisconnecting?: boolean
+}
+
+export function BalanceDisplay({ onDisconnect, isDisconnecting }: BalanceDisplayProps = {}) {
   const { address, status, wallet } = useChain('injective')
   const { network } = useNetwork()
   const [balance, setBalance] = useState<string>('0')
@@ -147,6 +152,17 @@ export function BalanceDisplay() {
           </div>
         )}
       </div>
+      {onDisconnect && (
+        <div className="wallet-card-footer">
+          <button 
+            onClick={onDisconnect} 
+            disabled={isDisconnecting} 
+            className="disconnect-btn-inline"
+          >
+            Disconnect
+          </button>
+        </div>
+      )}
     </div>
   )
 }
