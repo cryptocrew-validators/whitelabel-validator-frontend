@@ -96,6 +96,14 @@ function buildRpcErrorMessage(error: any, errorMsg: string) {
   )
 }
 
+function safeJsonStringify(value: unknown) {
+  return JSON.stringify(
+    value,
+    (_key, val) => (typeof val === 'bigint' ? val.toString() : val),
+    2
+  )
+}
+
 /**
  * Estimates gas for a transaction by simulating it
  * Returns the estimated gas multiplied by GAS_MULTIPLIER for safety
@@ -251,11 +259,11 @@ export function createOrchestratorMessage(
   }
 
   const msg: EncodeObject = {
-    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
     value: {
-      validator: data.validatorAddress,
+      sender: address,
       orchestrator: data.orchestratorAddress,
-      ethereum: data.ethereumAddress,
+      ethAddress: data.ethereumAddress,
     },
   }
 
@@ -558,18 +566,14 @@ export async function registerOrchestratorTransaction(
       ethereumAddress: data.ethereumAddress,
     })
 
-    // Derive validator operator address from the wallet account (same as createValidatorTransaction)
-    const validatorAddress = toValidatorOperatorAddress(address)
-    console.log('[ORCHESTRATOR REGISTRATION] Derived validator address:', validatorAddress)
-
-    // MsgSetOrchestratorAddress from Peggy module
+    // MsgSetOrchestratorAddresses from Peggy module
     // Note: This message type may need to be imported from Injective SDK
     const msg = {
-      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
       value: {
-        validator: validatorAddress, // Use derived validator operator address
+        sender: address, // Use account address as sender
         orchestrator: data.orchestratorAddress,
-        ethereum: data.ethereumAddress,
+        ethAddress: data.ethereumAddress,
       },
     }
 
@@ -617,11 +621,11 @@ export async function registerOrchestratorTransaction(
     
     // For commit mode, check the broadcastResponse first
     const broadcastResponse = result.broadcastResponse as any
-    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', JSON.stringify(broadcastResponse, null, 2))
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', safeJsonStringify(broadcastResponse))
     
     if (broadcastResponse && 'txResult' in broadcastResponse) {
       const txResult = broadcastResponse.txResult
-      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', JSON.stringify(txResult, null, 2))
+      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', safeJsonStringify(txResult))
       if (txResult && txResult.code !== 0) {
         const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
         console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in broadcastResponse:', errorLog)
