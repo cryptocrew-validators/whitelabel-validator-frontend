@@ -62,7 +62,8 @@ export default function ValidatorEditPage() {
         address,
         data,
         validator.operatorAddress,
-        chain.chain_id
+        chain.chain_id,
+        validator.commission.rate
       )
       
       // Only proceed if transaction succeeded (code 0)

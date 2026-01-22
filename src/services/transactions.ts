@@ -114,10 +114,10 @@ function formatScaledDecimal(value: bigint, scale: number): string {
   return `${isNegative ? '-' : ''}${integerPart.toString()}.${fractionalString}`
 }
 
-function percentStringToDecimal(value: string): string {
+function decimalStringToScaled(value: string, scale: number): bigint {
   const normalized = value.trim()
   if (!normalized) {
-    throw new Error('Commission rate must be between 0 and 100%')
+    return 0n
   }
 
   const [integerPart = '0', fractionalPart = ''] = normalized.split('.')
@@ -125,10 +125,24 @@ function percentStringToDecimal(value: string): string {
     throw new Error('Commission rate must be between 0 and 100%')
   }
 
-  const scale = 18
   const multiplier = 10n ** BigInt(scale)
   const paddedFraction = (fractionalPart + '0'.repeat(scale)).slice(0, scale)
-  const percentScaled = BigInt(integerPart) * multiplier + BigInt(paddedFraction || '0')
+  return BigInt(integerPart) * multiplier + BigInt(paddedFraction || '0')
+}
+
+function normalizeDecimalString(value: string, scale: number): string {
+  const scaled = decimalStringToScaled(value, scale)
+  return formatScaledDecimal(scaled, scale)
+}
+
+function percentStringToDecimal(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error('Commission rate must be between 0 and 100%')
+  }
+
+  const scale = 18
+  const percentScaled = decimalStringToScaled(normalized, scale)
   const decimalScaled = percentScaled / 100n
 
   return formatScaledDecimal(decimalScaled, scale)
@@ -743,7 +757,8 @@ export async function editValidatorTransaction(
   _address: string,
   data: ValidatorEditFormData,
   validatorAddress: string,
-  _chainId: string
+  _chainId: string,
+  currentCommissionRate?: string
 ) {
   try {
     // Validate and convert commission rate if provided (percentage to decimal)
@@ -768,7 +783,16 @@ export async function editValidatorTransaction(
       validatorAddress: validatorAddress,
     }
     
-    // Only include commissionRate if it's provided
+    // Only include commissionRate if it's provided and changed
+    if (commissionRate !== undefined) {
+      const normalizedCurrentRate = currentCommissionRate
+        ? normalizeDecimalString(currentCommissionRate, 18)
+        : undefined
+      if (normalizedCurrentRate && normalizedCurrentRate === commissionRate) {
+        commissionRate = undefined
+      }
+    }
+
     if (commissionRate !== undefined) {
       msgValue.commissionRate = commissionRate
     }
