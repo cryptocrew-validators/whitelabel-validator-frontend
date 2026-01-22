@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useChain } from '@cosmos-kit/react'
 import { ValidatorRegistrationForm } from '../components/ValidatorRegistrationForm'
-import { OrchestratorForm } from '../components/OrchestratorForm'
 import { TransactionStatus } from '../components/TransactionStatus'
-import { ValidatorRegistrationFormData, OrchestratorRegistrationFormData } from '../utils/validation'
+import { ValidatorRegistrationFormData } from '../utils/validation'
 import { TransactionStatus as TxStatus, ValidatorInfo } from '../types'
-import { createValidatorTransaction, registerOrchestratorTransaction } from '../services/transactions'
+import { createValidatorTransaction } from '../services/transactions'
 import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
 import { QueryService } from '../services/queries'
@@ -15,8 +14,6 @@ export default function ValidatorRegistrationPage() {
   const { address, getOfflineSignerDirect, chain, status } = useChain('injective')
   const { network } = useNetwork()
   const [validatorTxStatus, setValidatorTxStatus] = useState<TxStatus>({ status: 'idle' })
-  const [orchestratorTxStatus, setOrchestratorTxStatus] = useState<TxStatus>({ status: 'idle' })
-  const [validatorRegistered, setValidatorRegistered] = useState(false)
   const [existingValidator, setExistingValidator] = useState<ValidatorInfo | null>(null)
   const [loadingValidator, setLoadingValidator] = useState(false)
 
@@ -38,15 +35,12 @@ export default function ValidatorRegistrationPage() {
       
       if (validatorInfo) {
         setExistingValidator(validatorInfo)
-        setValidatorRegistered(true) // If validator exists, mark as registered
       } else {
         setExistingValidator(null)
-        setValidatorRegistered(false)
       }
     } catch (error) {
       console.error('Failed to check existing validator:', error)
       setExistingValidator(null)
-      setValidatorRegistered(false)
     } finally {
       setLoadingValidator(false)
     }
@@ -85,7 +79,6 @@ export default function ValidatorRegistrationPage() {
           hash: result.transactionHash,
           rawLog: (result as any).rawLog,
         })
-        setValidatorRegistered(true)
         // Refresh validator check to get the newly registered validator info
         await checkExistingValidator()
       } else {
@@ -100,37 +93,6 @@ export default function ValidatorRegistrationPage() {
         status: 'error', 
         error: errorMessage,
         rawLog: rawLog,
-      })
-    }
-  }
-
-  const handleOrchestratorSubmit = async (data: OrchestratorRegistrationFormData) => {
-    if (!address || !getOfflineSignerDirect) {
-      setOrchestratorTxStatus({ status: 'error', error: 'Wallet not connected' })
-      return
-    }
-
-    try {
-      setOrchestratorTxStatus({ status: 'pending' })
-      
-      // Get direct offline signer from Cosmos Kit for protobuf signing
-      const offlineSigner = getOfflineSignerDirect()
-      if (!offlineSigner) {
-        throw new Error('Failed to get offline signer')
-      }
-      
-      const signer = await createInjectiveSigner(offlineSigner, chain.chain_id, network)
-      
-      const result = await registerOrchestratorTransaction(signer, address, data, chain.chain_id)
-      
-      setOrchestratorTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
-    } catch (error: any) {
-      setOrchestratorTxStatus({ 
-        status: 'error', 
-        error: error.message || 'Failed to register orchestrator' 
       })
     }
   }
@@ -168,7 +130,7 @@ export default function ValidatorRegistrationPage() {
             </p>
           </div>
         </>
-      ) : !validatorRegistered ? (
+      ) : (
         <>
           <ValidatorRegistrationForm
             onSubmit={handleValidatorSubmit}
@@ -177,22 +139,6 @@ export default function ValidatorRegistrationPage() {
           <TransactionStatus 
             status={validatorTxStatus} 
             explorerUrl={explorerUrl}
-            network={network}
-          />
-        </>
-      ) : (
-        <>
-          <div className="success-message">
-            Validator registered successfully! You can now register the orchestrator address.
-          </div>
-          <OrchestratorForm
-            onSubmit={handleOrchestratorSubmit}
-            isSubmitting={orchestratorTxStatus.status === 'pending'}
-          />
-          <TransactionStatus 
-            status={orchestratorTxStatus} 
-            explorerUrl={explorerUrl}
-            network={network}
           />
         </>
       )}

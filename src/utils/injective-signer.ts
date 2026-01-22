@@ -199,6 +199,28 @@ export async function createInjectiveSigner(
         return w
       },
     },
+    {
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+      fromPartial: (obj: any) => obj,
+      encode: (message: any, writer?: BinaryWriter) => {
+        const w = writer || BinaryWriter.create()
+        
+        // Field 1: validator (string)
+        if (message.validator) {
+          w.uint32(10).string(message.validator)
+        }
+        // Field 2: orchestrator (string)
+        if (message.orchestrator) {
+          w.uint32(18).string(message.orchestrator)
+        }
+        // Field 3: ethereum (string)
+        if (message.ethereum) {
+          w.uint32(26).string(message.ethereum)
+        }
+        
+        return w
+      },
+    },
   ]
   
   signer.addEncoders(stakingEncoders)

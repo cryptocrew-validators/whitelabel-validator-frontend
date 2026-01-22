@@ -551,8 +551,16 @@ export async function registerOrchestratorTransaction(
   _chainId: string
 ) {
   try {
+    console.log('[ORCHESTRATOR REGISTRATION] Starting transaction')
+    console.log('[ORCHESTRATOR REGISTRATION] Input data:', {
+      address,
+      orchestratorAddress: data.orchestratorAddress,
+      ethereumAddress: data.ethereumAddress,
+    })
+
     // Derive validator operator address from the wallet account (same as createValidatorTransaction)
     const validatorAddress = toValidatorOperatorAddress(address)
+    console.log('[ORCHESTRATOR REGISTRATION] Derived validator address:', validatorAddress)
 
     // MsgSetOrchestratorAddress from Peggy module
     // Note: This message type may need to be imported from Injective SDK
@@ -565,13 +573,21 @@ export async function registerOrchestratorTransaction(
       },
     }
 
+    console.log('[ORCHESTRATOR REGISTRATION] Message before encoding:', JSON.stringify(msg, null, 2))
+
     // Estimate gas first
+    console.log('[ORCHESTRATOR REGISTRATION] Estimating gas...')
     const estimatedGas = await estimateGas(signer, [msg])
+    console.log('[ORCHESTRATOR REGISTRATION] Estimated gas:', estimatedGas)
     
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
       gas: estimatedGas,
     }
+
+    console.log('[ORCHESTRATOR REGISTRATION] Fee:', fee)
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast options:', broadcastOptions)
+    console.log('[ORCHESTRATOR REGISTRATION] Calling signAndBroadcast...')
 
     const result = await signer.signAndBroadcast(
       {
@@ -580,27 +596,44 @@ export async function registerOrchestratorTransaction(
       },
       broadcastOptions
     )
+
+    console.log('[ORCHESTRATOR REGISTRATION] After signAndBroadcast, result:', {
+      transactionHash: result.transactionHash,
+      broadcastResponse: result.broadcastResponse,
+    })
     
     // For commit mode, check the broadcastResponse first
     const broadcastResponse = result.broadcastResponse as any
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', JSON.stringify(broadcastResponse, null, 2))
+    
     if (broadcastResponse && 'txResult' in broadcastResponse) {
       const txResult = broadcastResponse.txResult
+      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', JSON.stringify(txResult, null, 2))
       if (txResult && txResult.code !== 0) {
         const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in broadcastResponse:', errorLog)
         throw new Error(errorLog)
       }
     }
     
     // Wait for transaction to be finalized in a block
+    console.log('[ORCHESTRATOR REGISTRATION] Waiting for transaction finalization...')
     let txResponse
     try {
       txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      console.log('[ORCHESTRATOR REGISTRATION] Transaction finalized:', {
+        code: txResponse.code,
+        hash: (txResponse as any).transactionHash || (txResponse as any).txhash,
+        rawLog: txResponse.rawLog,
+      })
     } catch (waitError: any) {
+      console.error('[ORCHESTRATOR REGISTRATION] Error waiting for transaction:', waitError)
       // If wait fails but we have a broadcastResponse with txResult, use that
       if (broadcastResponse && 'txResult' in broadcastResponse) {
         const txResult = broadcastResponse.txResult
         if (txResult && txResult.code !== 0) {
           const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in txResult:', errorLog)
           throw new Error(errorLog)
         }
       }
@@ -610,15 +643,32 @@ export async function registerOrchestratorTransaction(
     // Check if transaction actually succeeded (code 0 = success)
     if (txResponse.code !== 0) {
       const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      console.error('[ORCHESTRATOR REGISTRATION] Transaction failed with code:', txResponse.code, 'Error:', errorMsg)
       throw new Error(errorMsg)
     }
     
+    console.log('[ORCHESTRATOR REGISTRATION] Transaction succeeded!')
     return {
       ...result,
       txResponse, // Include the finalized tx response
       rawLog: txResponse.rawLog, // Include raw log for display
     }
   } catch (error: any) {
+    console.error('[ORCHESTRATOR REGISTRATION] Error caught:', error)
+    console.error('[ORCHESTRATOR REGISTRATION] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      data: error?.data,
+      response: error?.response,
+      stack: error?.stack,
+      cause: error?.cause,
+      txHash: error?.txHash,
+      transactionHash: error?.transactionHash,
+      rawLog: error?.rawLog,
+      txResponse: error?.txResponse,
+      txResult: error?.txResult,
+    })
+    
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
     if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
@@ -1041,6 +1091,95 @@ export async function undelegateTransaction(
     }
     if (errorMsg.includes('validator not found')) {
       throw new Error('Validator not found. Please verify the validator address is correct.')
+    }
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
+    }
+    throw error
+  }
+}
+
+export async function unjailTransaction(
+  signer: DirectSigner,
+  validatorAddress: string,
+  _chainId: string
+) {
+  try {
+    const msg = {
+      typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+      value: {
+        validatorAddr: validatorAddress,
+      },
+    }
+
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
+    const fee: StdFee = {
+      amount: [{ denom: 'inj', amount: '500000000000000000' }],
+      gas: estimatedGas,
+    }
+
+    const result = await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000)
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
+  } catch (error: any) {
+    // Enhance error messages
+    const errorMsg = error?.message || String(error) || ''
+    if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
+      throw new Error('Transaction was rejected. Please approve the transaction in your wallet.')
+    }
+    if (errorMsg.includes('insufficient funds')) {
+      throw new Error('Insufficient balance. Please ensure you have enough INJ for transaction fees.')
+    }
+    if (errorMsg.includes('validator not found')) {
+      throw new Error('Validator not found. Please verify the validator address is correct.')
+    }
+    if (errorMsg.includes('validator is not jailed')) {
+      throw new Error('Validator is not jailed. Unjail is only available for jailed validators.')
     }
     if (isRpcErrorMessage(errorMsg)) {
       logRpcError(error)
