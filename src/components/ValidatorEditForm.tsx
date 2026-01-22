@@ -36,7 +36,6 @@ export function ValidatorEditForm({ validator, onSubmit, isSubmitting }: Validat
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="validator-edit-form">
-      <h2>Edit Validator</h2>
 
       <div className="form-group">
         <label>
