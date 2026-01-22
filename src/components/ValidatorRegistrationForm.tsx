@@ -41,7 +41,10 @@ export function ValidatorRegistrationForm({ onSubmit, isSubmitting }: ValidatorR
         </div>
       )}
 
-      <div className="form-group">
+      <div className="form-section">
+        <h3>Validator Information</h3>
+        
+        <div className="form-group">
         <label>
           Consensus Pubkey (ed25519, base64):
           <input
@@ -108,55 +111,64 @@ export function ValidatorRegistrationForm({ onSubmit, isSubmitting }: ValidatorR
           <span className="error">{errors.details.message}</span>
         )}
       </div>
-
-      <div className="form-group">
-        <label>
-          Commission Rate (%):
-          <input {...register('commissionRate')} type="number" step="0.1" min="0" max="100" />
-        </label>
-        {errors.commissionRate && (
-          <span className="error">{errors.commissionRate.message}</span>
-        )}
       </div>
 
-      <div className="form-group">
-        <label>
-          Max Commission Rate (%):
-          <input {...register('maxCommissionRate')} type="number" step="0.1" min="0" max="100" />
-        </label>
-        {errors.maxCommissionRate && (
-          <span className="error">{errors.maxCommissionRate.message}</span>
-        )}
+      <div className="form-section">
+        <h3>Commission Settings</h3>
+        
+        <div className="form-group">
+          <label>
+            Commission Rate (%):
+            <input {...register('commissionRate')} type="number" step="0.1" min="0" max="100" />
+          </label>
+          {errors.commissionRate && (
+            <span className="error">{errors.commissionRate.message}</span>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>
+            Max Commission Rate (%):
+            <input {...register('maxCommissionRate')} type="number" step="0.1" min="0" max="100" />
+          </label>
+          {errors.maxCommissionRate && (
+            <span className="error">{errors.maxCommissionRate.message}</span>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>
+            Max Commission Change Rate (%):
+            <input {...register('maxCommissionChangeRate')} type="number" step="0.1" min="0" max="100" />
+          </label>
+          {errors.maxCommissionChangeRate && (
+            <span className="error">{errors.maxCommissionChangeRate.message}</span>
+          )}
+        </div>
       </div>
 
-      <div className="form-group">
-        <label>
-          Max Commission Change Rate (%):
-          <input {...register('maxCommissionChangeRate')} type="number" step="0.1" min="0" max="100" />
-        </label>
-        {errors.maxCommissionChangeRate && (
-          <span className="error">{errors.maxCommissionChangeRate.message}</span>
-        )}
-      </div>
+      <div className="form-section">
+        <h3>Delegation Settings</h3>
+        
+        <div className="form-group">
+          <label>
+            Min Self Delegation (INJ):
+            <input {...register('minSelfDelegation')} type="number" step="0.001" min="0" />
+          </label>
+          {errors.minSelfDelegation && (
+            <span className="error">{errors.minSelfDelegation.message}</span>
+          )}
+        </div>
 
-      <div className="form-group">
-        <label>
-          Min Self Delegation (INJ):
-          <input {...register('minSelfDelegation')} type="number" step="0.001" min="0" />
-        </label>
-        {errors.minSelfDelegation && (
-          <span className="error">{errors.minSelfDelegation.message}</span>
-        )}
-      </div>
-
-      <div className="form-group">
-        <label>
-          Self Delegation Amount (INJ):
-          <input {...register('selfDelegation')} type="number" step="0.001" min="0" />
-        </label>
-        {errors.selfDelegation && (
-          <span className="error">{errors.selfDelegation.message}</span>
-        )}
+        <div className="form-group">
+          <label>
+            Self Delegation Amount (INJ):
+            <input {...register('selfDelegation')} type="number" step="0.001" min="0" />
+          </label>
+          {errors.selfDelegation && (
+            <span className="error">{errors.selfDelegation.message}</span>
+          )}
+        </div>
       </div>
 
       <button type="submit" disabled={isSubmitting}>

@@ -245,6 +245,7 @@ export default function DelegationPage() {
               <TransactionStatus 
                 status={txStatus} 
                 explorerUrl={explorerUrl}
+                onDismiss={() => setTxStatus({ status: 'idle' })}
               />
             </>
           )}

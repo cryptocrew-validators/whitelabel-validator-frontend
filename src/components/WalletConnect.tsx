@@ -32,12 +32,8 @@ export function WalletConnect() {
   if (isWalletConnected && address) {
     return (
       <div className="wallet-connect">
-        <div className="wallet-info">
-          <span className="wallet-name">{wallet?.prettyName || 'Connected'}</span>
-          <span className="wallet-address">{address.slice(0, 8)}...{address.slice(-6)}</span>
-          <BalanceDisplay />
-        </div>
-        <button onClick={handleDisconnect} disabled={status === 'Connecting'}>
+        <BalanceDisplay />
+        <button onClick={handleDisconnect} disabled={status === 'Connecting'} className="disconnect-btn">
           Disconnect
         </button>
       </div>

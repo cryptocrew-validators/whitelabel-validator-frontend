@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useChain } from '@cosmos-kit/react'
 import { OrchestratorForm } from '../components/OrchestratorForm'
 import { TransactionStatus } from '../components/TransactionStatus'
@@ -18,6 +19,9 @@ export default function OrchestratorRegistrationPage() {
   const [existingOrchestrator, setExistingOrchestrator] = useState<OrchestratorMapping | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingOrchestrator, setLoadingOrchestrator] = useState(false)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
+  const [profileImageError, setProfileImageError] = useState(false)
+  const [warningDismissed, setWarningDismissed] = useState(false)
 
   useEffect(() => {
     if (address) {
@@ -25,6 +29,70 @@ export default function OrchestratorRegistrationPage() {
       loadOrchestrator()
     }
   }, [address, network])
+
+  // Load Keybase profile picture when validator changes
+  useEffect(() => {
+    const loadKeybasePicture = async () => {
+      if (!validator?.identity || validator.identity.trim() === '') {
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+        return
+      }
+
+      const identity = validator.identity.trim()
+      console.log('[OrchestratorRegistrationPage] Loading Keybase picture for identity:', identity)
+      
+      try {
+        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
+        // Use the lookup API with key_suffix parameter
+        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
+        console.log('[OrchestratorRegistrationPage] Fetching Keybase lookup API:', lookupUrl)
+        const response = await fetch(lookupUrl)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('[OrchestratorRegistrationPage] Keybase lookup API response:', data)
+          
+          if (data?.status?.code === 0 && data?.them?.length > 0) {
+            const user = data.them[0]
+            if (user?.pictures?.primary?.url) {
+              const pictureUrl = user.pictures.primary.url
+              console.log('[OrchestratorRegistrationPage] Found Keybase picture URL:', pictureUrl)
+              setProfileImageUrl(pictureUrl)
+              setProfileImageError(false)
+              return
+            }
+          }
+        }
+        
+        // Fallback: try direct URL for username
+        const directUrl = `https://keybase.io/${identity}/picture`
+        console.log('[OrchestratorRegistrationPage] Trying direct Keybase URL:', directUrl)
+        const directResponse = await fetch(directUrl, { method: 'HEAD' })
+        if (directResponse.ok) {
+          setProfileImageUrl(directUrl)
+          setProfileImageError(false)
+          return
+        }
+        
+        // No picture found
+        console.log('[OrchestratorRegistrationPage] No Keybase picture found')
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      } catch (error) {
+        console.error('[OrchestratorRegistrationPage] Error loading Keybase picture:', error)
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      }
+    }
+
+    if (validator) {
+      loadKeybasePicture()
+    } else {
+      setProfileImageUrl(null)
+      setProfileImageError(false)
+    }
+  }, [validator])
 
   const loadValidator = async () => {
     if (!address) return
@@ -125,29 +193,68 @@ export default function OrchestratorRegistrationPage() {
         </div>
       ) : existingOrchestrator ? (
         <>
-          <TransactionStatus 
-            status={{
-              status: 'warning',
-              warning: 'An orchestrator has already been registered for this wallet. Orchestrator addresses cannot be changed once registered.',
-            }}
-            explorerUrl={explorerUrl}
-          />
-          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Registered Orchestrator</h3>
-            <p style={{ marginTop: '0.5rem' }}>
-              <strong>Orchestrator Address:</strong>
-              <br />
-              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingOrchestrator.orchestratorAddress}</span>
-            </p>
-            <p style={{ marginTop: '0.5rem' }}>
-              <strong>Ethereum Address:</strong>
-              <br />
-              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingOrchestrator.ethereumAddress}</span>
-            </p>
+          {!warningDismissed && (
+            <TransactionStatus 
+              status={{
+                status: 'warning',
+                warning: 'An orchestrator has already been registered for this wallet. Orchestrator addresses cannot be changed once registered.',
+              }}
+              explorerUrl={explorerUrl}
+              inline={true}
+              onDismiss={() => setWarningDismissed(true)}
+            />
+          )}
+          <div className="validator-info" style={{ marginTop: '1.5rem' }}>
+            <div className="info-section">
+              <h3>Registered Orchestrator</h3>
+              <Link to="/status" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="validator-profile-header" style={{ cursor: 'pointer' }}>
+                  <div className="profile-picture-container">
+                    {profileImageUrl && !profileImageError ? (
+                      <img
+                        src={profileImageUrl}
+                        alt={`${validator.moniker} profile`}
+                        className="profile-picture"
+                        onError={() => setProfileImageError(true)}
+                      />
+                    ) : (
+                      <div className="profile-picture-default">
+                        {validator.moniker
+                          ? (() => {
+                              const words = validator.moniker.trim().split(/\s+/)
+                              if (words.length >= 2) {
+                                return (words[0][0] + words[1][0]).toUpperCase()
+                              }
+                              return validator.moniker.substring(0, 2).toUpperCase()
+                            })()
+                          : 'V'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="validator-profile-info">
+                    <div className="info-item">
+                      <span className="info-label">Moniker</span>
+                      <span className="info-value">{validator.moniker || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+              <div className="info-grid" style={{ marginTop: '1rem' }}>
+                <div className="info-item">
+                  <span className="info-label">Orchestrator Address</span>
+                  <span className="info-value address-value">{existingOrchestrator.orchestratorAddress}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Ethereum Address</span>
+                  <span className="info-value address-value">{existingOrchestrator.ethereumAddress}</span>
+                </div>
+              </div>
+            </div>
           </div>
           <TransactionStatus 
             status={orchestratorTxStatus} 
             explorerUrl={explorerUrl}
+            onDismiss={() => setOrchestratorTxStatus({ status: 'idle' })}
           />
         </>
       ) : (
@@ -159,6 +266,7 @@ export default function OrchestratorRegistrationPage() {
           <TransactionStatus 
             status={orchestratorTxStatus} 
             explorerUrl={explorerUrl}
+            onDismiss={() => setOrchestratorTxStatus({ status: 'idle' })}
           />
         </>
       )}

@@ -45,8 +45,10 @@ export function ValidatorEditForm({ validator, onSubmit, isSubmitting }: Validat
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="validator-edit-form">
-
-      <div className="form-group">
+      <div className="form-section">
+        <h3>Update Validator Information</h3>
+        
+        <div className="form-group">
         <label>
           Moniker:
           <input {...register('moniker')} type="text" />
@@ -95,17 +97,22 @@ export function ValidatorEditForm({ validator, onSubmit, isSubmitting }: Validat
           <span className="error">{errors.details.message}</span>
         )}
       </div>
+      </div>
 
-      <div className="form-group">
-        <label>
-          Commission Rate (%):
-          <input {...register('commissionRate')} type="number" step="0.1" min="0" max="100" />
-          <small>Current: {commissionRatePercent}%</small>
-          <small>Max change rate: {maxChangeRatePercent}%</small>
-        </label>
-        {errors.commissionRate && (
-          <span className="error">{errors.commissionRate.message}</span>
-        )}
+      <div className="form-section">
+        <h3>Update Commission Settings</h3>
+        
+        <div className="form-group">
+          <label>
+            Commission Rate (%):
+            <input {...register('commissionRate')} type="number" step="0.1" min="0" max="100" />
+            <small>Current: {commissionRatePercent}%</small>
+            <small>Max change rate: {maxChangeRatePercent}%</small>
+          </label>
+          {errors.commissionRate && (
+            <span className="error">{errors.commissionRate.message}</span>
+          )}
+        </div>
       </div>
 
       <button type="submit" disabled={isSubmitting}>

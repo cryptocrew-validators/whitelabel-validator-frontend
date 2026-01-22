@@ -6,7 +6,7 @@ import { QueryService } from '../services/queries'
 import { toValidatorOperatorAddress } from '../utils/address'
 
 export function BalanceDisplay() {
-  const { address, status } = useChain('injective')
+  const { address, status, wallet } = useChain('injective')
   const { network } = useNetwork()
   const [balance, setBalance] = useState<string>('0')
   const [loading, setLoading] = useState(false)
@@ -86,6 +86,15 @@ export function BalanceDisplay() {
     }
   }
 
+  const copyToClipboard = async (text: string, type: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      // You could add a toast notification here if desired
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
   if (!address) {
     return null
   }
@@ -95,18 +104,46 @@ export function BalanceDisplay() {
     : `${(parseInt(balance) / 1e18).toFixed(4)} INJ`
 
   return (
-    <div className="balance-display">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end' }}>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <span className="balance-label">Balance:</span>
-          <span className="balance-value">{formattedBalance}</span>
+    <div className="wallet-card">
+      <div className="wallet-card-header">
+        <span className="wallet-name">{wallet?.prettyName || 'Connected'}</span>
+        <div className="address-with-copy">
+          <span className="wallet-address">{address.slice(0, 8)}...{address.slice(-6)}</span>
+          <button
+            className="copy-button"
+            onClick={() => copyToClipboard(address, 'wallet')}
+            title="Copy wallet address"
+            aria-label="Copy wallet address"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="wallet-card-body">
+        <div className="wallet-info-item">
+          <span className="wallet-info-label">Balance</span>
+          <span className="wallet-info-value">{formattedBalance}</span>
         </div>
         {validatorOperatorAddress && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', alignItems: 'flex-end', marginTop: '0.25rem' }}>
-            <span style={{ fontSize: '0.75rem', color: '#aaa' }}>Validator:</span>
-            <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#4a9eff', wordBreak: 'break-all', textAlign: 'right' }}>
-              {validatorOperatorAddress}
-            </span>
+          <div className="wallet-info-item" title={validatorOperatorAddress}>
+            <span className="wallet-info-label">Validator</span>
+            <div className="address-with-copy">
+              <span className="wallet-info-value validator-address">{validatorOperatorAddress.slice(0, 10)}...{validatorOperatorAddress.slice(-6)}</span>
+              <button
+                className="copy-button"
+                onClick={() => copyToClipboard(validatorOperatorAddress, 'validator')}
+                title="Copy validator address"
+                aria-label="Copy validator address"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
           </div>
         )}
       </div>

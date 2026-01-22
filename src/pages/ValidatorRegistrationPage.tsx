@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useChain } from '@cosmos-kit/react'
 import { ValidatorRegistrationForm } from '../components/ValidatorRegistrationForm'
 import { TransactionStatus } from '../components/TransactionStatus'
@@ -16,12 +17,79 @@ export default function ValidatorRegistrationPage() {
   const [validatorTxStatus, setValidatorTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [existingValidator, setExistingValidator] = useState<ValidatorInfo | null>(null)
   const [loadingValidator, setLoadingValidator] = useState(false)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
+  const [profileImageError, setProfileImageError] = useState(false)
+  const [warningDismissed, setWarningDismissed] = useState(false)
 
   useEffect(() => {
     if (address) {
       checkExistingValidator()
     }
   }, [address, network])
+
+  // Load Keybase profile picture when existingValidator changes
+  useEffect(() => {
+    const loadKeybasePicture = async () => {
+      if (!existingValidator?.identity || existingValidator.identity.trim() === '') {
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+        return
+      }
+
+      const identity = existingValidator.identity.trim()
+      console.log('[ValidatorRegistrationPage] Loading Keybase picture for identity:', identity)
+      
+      try {
+        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
+        // Use the lookup API with key_suffix parameter
+        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
+        console.log('[ValidatorRegistrationPage] Fetching Keybase lookup API:', lookupUrl)
+        const response = await fetch(lookupUrl)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('[ValidatorRegistrationPage] Keybase lookup API response:', data)
+          
+          if (data?.status?.code === 0 && data?.them?.length > 0) {
+            const user = data.them[0]
+            if (user?.pictures?.primary?.url) {
+              const pictureUrl = user.pictures.primary.url
+              console.log('[ValidatorRegistrationPage] Found Keybase picture URL:', pictureUrl)
+              setProfileImageUrl(pictureUrl)
+              setProfileImageError(false)
+              return
+            }
+          }
+        }
+        
+        // Fallback: try direct URL for username
+        const directUrl = `https://keybase.io/${identity}/picture`
+        console.log('[ValidatorRegistrationPage] Trying direct Keybase URL:', directUrl)
+        const directResponse = await fetch(directUrl, { method: 'HEAD' })
+        if (directResponse.ok) {
+          setProfileImageUrl(directUrl)
+          setProfileImageError(false)
+          return
+        }
+        
+        // No picture found
+        console.log('[ValidatorRegistrationPage] No Keybase picture found')
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      } catch (error) {
+        console.error('[ValidatorRegistrationPage] Error loading Keybase picture:', error)
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      }
+    }
+
+    if (existingValidator) {
+      loadKeybasePicture()
+    } else {
+      setProfileImageUrl(null)
+      setProfileImageError(false)
+    }
+  }, [existingValidator])
 
   const checkExistingValidator = async () => {
     if (!address) return
@@ -113,22 +181,62 @@ export default function ValidatorRegistrationPage() {
         <div>Checking for existing validator...</div>
       ) : existingValidator && validatorTxStatus.status !== 'success' ? (
         <>
-          <TransactionStatus 
-            status={{
-              status: 'warning',
-              warning: 'A validator has already been registered with this wallet. You cannot register another validator with the same wallet address.',
-            }}
-            explorerUrl={explorerUrl}
-          />
-          <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <p style={{ color: '#aaa' }}>
-              Moniker: {existingValidator.moniker || 'N/A'}
-            </p>
+          {!warningDismissed && (
+            <TransactionStatus 
+              status={{
+                status: 'warning',
+                warning: 'A validator has already been registered with this wallet. You cannot register another validator with the same wallet address.',
+              }}
+              explorerUrl={explorerUrl}
+              inline={true}
+              onDismiss={() => setWarningDismissed(true)}
+            />
+          )}
+          <div className="validator-info" style={{ marginTop: '1.5rem' }}>
+            <div className="info-section">
+              <h3>Registered Validator</h3>
+              <Link to="/status" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="validator-profile-header" style={{ cursor: 'pointer' }}>
+                  <div className="profile-picture-container">
+                    {profileImageUrl && !profileImageError ? (
+                      <img
+                        src={profileImageUrl}
+                        alt={`${existingValidator.moniker} profile`}
+                        className="profile-picture"
+                        onError={() => setProfileImageError(true)}
+                      />
+                    ) : (
+                      <div className="profile-picture-default">
+                        {existingValidator.moniker
+                          ? (() => {
+                              const words = existingValidator.moniker.trim().split(/\s+/)
+                              if (words.length >= 2) {
+                                return (words[0][0] + words[1][0]).toUpperCase()
+                              }
+                              return existingValidator.moniker.substring(0, 2).toUpperCase()
+                            })()
+                          : 'V'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="validator-profile-info">
+                    <div className="info-item">
+                      <span className="info-label">Moniker</span>
+                      <span className="info-value">{existingValidator.moniker || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            </div>
           </div>
           <div style={{ marginTop: '1.5rem' }}>
             <p>To register a new validator, please connect with a different wallet address.</p>
-            <p style={{ marginTop: '0.5rem', color: '#aaa' }}>
-              You can use the "Edit Validator" page to update your existing validator's information.
+            <p style={{ marginTop: '0.5rem', color: 'var(--text-tertiary)' }}>
+              You can use the{' '}
+              <Link to="/edit" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                Edit Validator
+              </Link>
+              {' '}page to update your existing validator's information.
             </p>
           </div>
         </>
@@ -141,6 +249,7 @@ export default function ValidatorRegistrationPage() {
           <TransactionStatus 
             status={validatorTxStatus} 
             explorerUrl={explorerUrl}
+            onDismiss={() => setValidatorTxStatus({ status: 'idle' })}
           />
         </>
       )}

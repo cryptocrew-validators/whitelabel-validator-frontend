@@ -35,7 +35,8 @@ export function DelegateForm({ validatorAddress, onSubmit, isSubmitting, availab
     <form onSubmit={handleSubmit(onSubmit)} className="delegate-form">
       <h3>Delegate</h3>
 
-      <div className="form-group">
+      <div className="form-section">
+        <div className="form-group">
         <label>
           Validator Address:
           <input
@@ -52,29 +53,22 @@ export function DelegateForm({ validatorAddress, onSubmit, isSubmitting, availab
       <div className="form-group">
         <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Amount (INJ):</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <span style={{ color: '#aaa' }}>Available: {availableBalanceInInj} INJ</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>Available: {availableBalanceInInj} INJ</span>
             <button
               type="button"
               onClick={handleMaxClick}
-              style={{
-                padding: '0.25rem 0.5rem',
-                fontSize: '0.75rem',
-                backgroundColor: '#4a9eff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
+              className="max-button-link"
             >
-              Max
+              MAX
             </button>
-          </div>
+          </span>
         </label>
         <input {...register('amount')} type="number" step="0.001" min="0" />
         {errors.amount && (
           <span className="error">{errors.amount.message}</span>
         )}
+        </div>
       </div>
 
       <button type="submit" disabled={isSubmitting}>

@@ -120,6 +120,7 @@ export default function ValidatorEditPage() {
           <TransactionStatus 
             status={txStatus} 
             explorerUrl={explorerUrl}
+            onDismiss={() => setTxStatus({ status: 'idle' })}
           />
         </>
       )}

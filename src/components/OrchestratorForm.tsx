@@ -39,7 +39,10 @@ export function OrchestratorForm({ onSubmit, isSubmitting }: OrchestratorFormPro
         <p>Once you register the orchestrator address and Ethereum address, you cannot change them. Please verify all addresses are correct before submitting.</p>
       </div>
 
-      <div className="form-group">
+      <div className="form-section">
+        <h3>Orchestrator Addresses</h3>
+        
+        <div className="form-group">
         <label>
           Validator Operator Address:
           <input
@@ -83,6 +86,7 @@ export function OrchestratorForm({ onSubmit, isSubmitting }: OrchestratorFormPro
         {errors.ethereumAddress && (
           <span className="error">{errors.ethereumAddress.message}</span>
         )}
+        </div>
       </div>
 
       <button type="submit" disabled={isSubmitting}>

@@ -35,11 +35,21 @@ export function formatTokenAmount(amount: string, decimals: number = 18, display
   // Convert fractional part to decimal string with padding to full decimals
   const fractionalStr = fractionalPart.toString().padStart(decimals, '0')
   
-  // Take the first displayDecimals digits (this gives us the most significant digits)
-  const displayFractional = fractionalStr.substring(0, displayDecimals)
+  // Find the first non-zero digit to determine where to start displaying
+  const firstNonZeroIndex = fractionalStr.search(/[1-9]/)
   
-  // Remove trailing zeros
-  const trimmedFractional = displayFractional.replace(/0+$/, '')
+  if (firstNonZeroIndex === -1) {
+    // All zeros in fractional part
+    return integerPart.toString()
+  }
+  
+  // Take digits from first non-zero up to displayDecimals digits total
+  // This ensures we show the most significant digits
+  const endIndex = Math.min(firstNonZeroIndex + displayDecimals, decimals)
+  const displayFractional = fractionalStr.substring(firstNonZeroIndex, endIndex)
+  
+  // Remove trailing zeros, but keep at least one digit
+  const trimmedFractional = displayFractional.replace(/0+$/, '') || displayFractional[0]
   
   if (trimmedFractional === '') {
     return integerPart.toString()
