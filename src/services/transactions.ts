@@ -96,6 +96,14 @@ function buildRpcErrorMessage(error: any, errorMsg: string) {
   )
 }
 
+function safeJsonStringify(value: unknown) {
+  return JSON.stringify(
+    value,
+    (_key, val) => (typeof val === 'bigint' ? val.toString() : val),
+    2
+  )
+}
+
 /**
  * Estimates gas for a transaction by simulating it
  * Returns the estimated gas multiplied by GAS_MULTIPLIER for safety
@@ -613,11 +621,11 @@ export async function registerOrchestratorTransaction(
     
     // For commit mode, check the broadcastResponse first
     const broadcastResponse = result.broadcastResponse as any
-    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', JSON.stringify(broadcastResponse, null, 2))
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', safeJsonStringify(broadcastResponse))
     
     if (broadcastResponse && 'txResult' in broadcastResponse) {
       const txResult = broadcastResponse.txResult
-      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', JSON.stringify(txResult, null, 2))
+      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', safeJsonStringify(txResult))
       if (txResult && txResult.code !== 0) {
         const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
         console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in broadcastResponse:', errorLog)
