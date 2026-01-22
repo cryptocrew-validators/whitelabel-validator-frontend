@@ -14,22 +14,23 @@ export function TransactionStatus({ status, explorerUrl, onDismiss, inline = fal
   const { network } = useNetwork()
   const [isVisible, setIsVisible] = useState(true)
   
-  // Auto-dismiss success messages after 10 seconds
+  // Auto-dismiss overlay boxes after 20 seconds (not inline ones)
   useEffect(() => {
-    if (status.status === 'success' && !status.hash) {
-      // Don't auto-dismiss if there's a hash (user might want to click the link)
+    if (inline) {
+      // Don't auto-dismiss inline messages
       return
     }
-    if (status.status === 'success') {
+    
+    if (status.status !== 'idle') {
       const timer = setTimeout(() => {
         setIsVisible(false)
         if (onDismiss) {
           setTimeout(onDismiss, 300) // Wait for animation
         }
-      }, 10000)
+      }, 10000) // 10 seconds
       return () => clearTimeout(timer)
     }
-  }, [status.status, status.hash, onDismiss])
+  }, [status.status, inline, onDismiss])
   
   const handleDismiss = () => {
     setIsVisible(false)

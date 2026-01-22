@@ -102,17 +102,19 @@ function AppContent() {
     
     // Configure signer options for Injective
     const signerOptions: SignerOptions = {
-      signingStargate: (chain: Chain) => {
-        if (chain.chain_name === 'injective') {
+      signingStargate: (chain: string | Chain) => {
+        const chainName = typeof chain === 'string' ? chain : chain.chain_name
+        if (chainName === 'injective') {
           return {
             gasPrice: GasPrice.fromString('500000000inj'), // 0.5 INJ per gas unit
-          }
+          } as any
         }
         return undefined
       },
-      preferredSignType: (chain: Chain) => {
+      preferredSignType: (chain: string | Chain) => {
         // Injective uses direct (protobuf) signing for custom types
-        if (chain.chain_name === 'injective') {
+        const chainName = typeof chain === 'string' ? chain : chain.chain_name
+        if (chainName === 'injective') {
           return 'direct'
         }
         return 'amino'
@@ -148,21 +150,13 @@ function AppContent() {
               },
             },
           }}
-          modalTheme={{
-            lightMode: {},
-            darkMode: {
-              modal: {
-                background: '#1a1a1a',
-              },
-              overlay: {
-                background: 'rgba(0, 0, 0, 0.7)',
-              },
-            },
-          }}
         >
           <BrowserRouter>
             <div className="app">
               <nav className="navigation">
+                <Link to="/" className="logo-link">
+                  <img src="/ccvalidators_logo.png" alt="CryptoCrew Validators" className="logo-image" />
+                </Link>
                 <Link to="/">Register Validator</Link>
                 <Link to="/orchestrator">Register Orchestrator</Link>
                 <Link to="/edit">Edit Validator</Link>

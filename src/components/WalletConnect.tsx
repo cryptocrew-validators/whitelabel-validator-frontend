@@ -32,10 +32,7 @@ export function WalletConnect() {
   if (isWalletConnected && address) {
     return (
       <div className="wallet-connect">
-        <BalanceDisplay />
-        <button onClick={handleDisconnect} disabled={status === 'Connecting'} className="disconnect-btn">
-          Disconnect
-        </button>
+        <BalanceDisplay onDisconnect={handleDisconnect} isDisconnecting={status === 'Connecting'} />
       </div>
     )
   }
