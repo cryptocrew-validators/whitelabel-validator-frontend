@@ -26,6 +26,8 @@ export class QueryService {
       const data = await response.json()
       const validator = data.validator
       
+      console.log('[QUERY] Raw validator data from API:', JSON.stringify(validator, null, 2))
+      
       if (!validator) {
         return null
       }
@@ -38,6 +40,16 @@ export class QueryService {
           consensusPubkey = validator.consensus_pubkey.value
         }
       }
+      
+      const jailed = validator.jailed === true
+      const status = validator.status || 'BOND_STATUS_UNBONDED'
+      
+      console.log('[QUERY] Parsed validator info:', {
+        operatorAddress: validator.operator_address || validatorAddress,
+        jailed,
+        status,
+        moniker: validator.description?.moniker || '',
+      })
       
       return {
         operatorAddress: validator.operator_address || validatorAddress,
@@ -53,7 +65,8 @@ export class QueryService {
           maxChangeRate: validator.commission?.commission_rates?.max_change_rate || '0',
         },
         minSelfDelegation: validator.min_self_delegation || '0',
-        status: validator.status || 'BOND_STATUS_UNBONDED',
+        status: status as 'BOND_STATUS_UNBONDED' | 'BOND_STATUS_UNBONDING' | 'BOND_STATUS_BONDED',
+        jailed,
         tokens: validator.tokens || '0',
         delegatorShares: validator.delegator_shares || '0',
       }

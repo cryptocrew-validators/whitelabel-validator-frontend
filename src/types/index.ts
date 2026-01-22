@@ -13,6 +13,7 @@ export interface ValidatorInfo {
   }
   minSelfDelegation: string
   status: 'BOND_STATUS_UNBONDED' | 'BOND_STATUS_UNBONDING' | 'BOND_STATUS_BONDED'
+  jailed: boolean
   tokens: string
   delegatorShares: string
 }

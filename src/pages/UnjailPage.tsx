@@ -33,9 +33,16 @@ export default function UnjailPage() {
       const validatorInfo = await queryService.getValidator(derivedValidatorAddress)
       
       if (validatorInfo) {
+        console.log('[UNJAIL PAGE] Loaded validator info:', {
+          operatorAddress: validatorInfo.operatorAddress,
+          status: validatorInfo.status,
+          jailed: validatorInfo.jailed,
+          moniker: validatorInfo.moniker,
+        })
         setValidator(validatorInfo)
         setValidatorAddress(derivedValidatorAddress)
       } else {
+        console.log('[UNJAIL PAGE] No validator found for address:', derivedValidatorAddress)
         setValidator(null)
         setValidatorAddress('')
       }
@@ -125,10 +132,11 @@ export default function UnjailPage() {
           <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
             <h3>Validator Status</h3>
             <p>Status: {validator.status}</p>
+            <p>Jailed: {validator.jailed ? 'Yes' : 'No'}</p>
             <p>Moniker: {validator.moniker || 'N/A'}</p>
           </div>
 
-          {validator.status === 'BOND_STATUS_JAILED' ? (
+          {validator.jailed ? (
             <div className="form-section" style={{ padding: '1.5rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
               <h3>Unjail Validator</h3>
               <p style={{ marginBottom: '1rem', color: '#aaa' }}>
