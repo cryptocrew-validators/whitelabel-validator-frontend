@@ -143,20 +143,43 @@ export async function createInjectiveSigner(
       typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
       fromPartial: (obj: any) => obj,
       encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgEditValidator:', {
+          typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
+          message,
+        })
+        
         const w = writer || BinaryWriter.create()
         
+        // Field 1: description (Description)
         if (message.description) {
+          console.log('[ENCODER] Encoding description:', message.description)
           Description.encode(message.description, w.uint32(10).fork()).ldelim()
         }
+        
+        // Field 2: validator_address (string)
         if (message.validatorAddress) {
+          console.log('[ENCODER] Encoding validatorAddress:', message.validatorAddress)
           w.uint32(18).string(message.validatorAddress)
         }
-        if (message.commissionRate) {
+        
+        // Field 3: commission_rate (string) - optional
+        if (message.commissionRate !== undefined && message.commissionRate !== null && message.commissionRate !== '') {
+          console.log('[ENCODER] Encoding commissionRate:', message.commissionRate)
           w.uint32(26).string(message.commissionRate)
         }
-        if (message.minSelfDelegation) {
+        
+        // Field 4: min_self_delegation (string) - optional
+        if (message.minSelfDelegation !== undefined && message.minSelfDelegation !== null && message.minSelfDelegation !== '') {
+          console.log('[ENCODER] Encoding minSelfDelegation:', message.minSelfDelegation)
           w.uint32(34).string(message.minSelfDelegation)
         }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded MsgEditValidator bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
         
         return w
       },

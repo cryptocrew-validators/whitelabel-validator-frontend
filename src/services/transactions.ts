@@ -726,35 +726,46 @@ export async function editValidatorTransaction(
       commissionRate = (ratePercent / 100).toFixed(18)
     }
 
+    // Build message value - only include commissionRate if it's defined
+    const msgValue: any = {
+      description: {
+        moniker: data.moniker,
+        identity: data.identity || '',
+        website: data.website || '',
+        securityContact: data.securityContact || '',
+        details: data.details || '',
+      },
+      validatorAddress: validatorAddress,
+    }
+    
+    // Only include commissionRate if it's provided
+    if (commissionRate !== undefined) {
+      msgValue.commissionRate = commissionRate
+    }
+
     const msg = {
       typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
-      value: {
-        description: {
-          moniker: data.moniker,
-          identity: data.identity || '',
-          website: data.website || '',
-          securityContact: data.securityContact || '',
-          details: data.details || '',
-        },
-        commissionRate: commissionRate,
-        validatorAddress: validatorAddress,
-      },
+      value: msgValue,
     }
+
+    // Log the message structure before encoding
+    console.log('[EDIT VALIDATOR] Message before encoding:', {
+      typeUrl: msg.typeUrl,
+      value: JSON.parse(JSON.stringify(msg.value)),
+      commissionRateProvided: data.commissionRate !== undefined,
+      commissionRateValue: commissionRate,
+    })
 
     // Estimate gas first
     const estimatedGas = await estimateGas(signer, [msg])
+    console.log('[EDIT VALIDATOR] Estimated gas:', estimatedGas)
     
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
       gas: estimatedGas,
     }
 
-    // Log the message structure before encoding
-    console.log('[EDIT VALIDATOR] Before encoding:', {
-      typeUrl: msg.typeUrl,
-      value: msg.value,
-      fee,
-    })
+    console.log('[EDIT VALIDATOR] Fee:', fee)
 
     try {
       // Use signAndBroadcast with 'commit' mode to wait for confirmation
