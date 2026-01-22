@@ -236,6 +236,33 @@ export async function createInjectiveSigner(
         return w
       },
     },
+    {
+      typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+      fromPartial: (obj: any) => obj,
+      encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgUnjail:', {
+          typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+          message,
+        })
+        
+        const w = writer || BinaryWriter.create()
+        
+        // Field 1: validatorAddr (string)
+        if (message.validatorAddr) {
+          console.log('[ENCODER] Encoding validatorAddr:', message.validatorAddr)
+          w.uint32(10).string(message.validatorAddr)
+        }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded MsgUnjail bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
+        
+        return w
+      },
+    },
   ]
   
   signer.addEncoders(stakingEncoders)
