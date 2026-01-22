@@ -104,6 +104,50 @@ function safeJsonStringify(value: unknown) {
   )
 }
 
+function formatScaledDecimal(value: bigint, scale: number): string {
+  const isNegative = value < 0n
+  const absValue = isNegative ? -value : value
+  const divisor = 10n ** BigInt(scale)
+  const integerPart = absValue / divisor
+  const fractionalPart = absValue % divisor
+  const fractionalString = fractionalPart.toString().padStart(scale, '0')
+  return `${isNegative ? '-' : ''}${integerPart.toString()}.${fractionalString}`
+}
+
+function decimalStringToScaled(value: string, scale: number): bigint {
+  const normalized = value.trim()
+  if (!normalized) {
+    return 0n
+  }
+
+  const [integerPart = '0', fractionalPart = ''] = normalized.split('.')
+  if (!/^\d+$/.test(integerPart) || (fractionalPart && !/^\d+$/.test(fractionalPart))) {
+    throw new Error('Commission rate must be between 0 and 100%')
+  }
+
+  const multiplier = 10n ** BigInt(scale)
+  const paddedFraction = (fractionalPart + '0'.repeat(scale)).slice(0, scale)
+  return BigInt(integerPart) * multiplier + BigInt(paddedFraction || '0')
+}
+
+function normalizeDecimalString(value: string, scale: number): string {
+  const scaled = decimalStringToScaled(value, scale)
+  return formatScaledDecimal(scaled, scale)
+}
+
+function percentStringToDecimal(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error('Commission rate must be between 0 and 100%')
+  }
+
+  const scale = 18
+  const percentScaled = decimalStringToScaled(normalized, scale)
+  const decimalScaled = percentScaled / 100n
+
+  return formatScaledDecimal(decimalScaled, scale)
+}
+
 /**
  * Estimates gas for a transaction by simulating it
  * Returns the estimated gas multiplied by GAS_MULTIPLIER for safety
@@ -346,9 +390,9 @@ export async function createValidatorTransaction(
     const minSelfDelegationBase = Math.floor(minSelfDelegationAmount * 1e18).toString()
 
     // Convert commission rates from percentage to decimal (0-100% -> 0-1)
-    const commissionRate = (parseFloat(data.commissionRate) / 100).toFixed(18)
-    const maxCommissionRate = (parseFloat(data.maxCommissionRate) / 100).toFixed(18)
-    const maxCommissionChangeRate = (parseFloat(data.maxCommissionChangeRate) / 100).toFixed(18)
+    const commissionRate = percentStringToDecimal(data.commissionRate)
+    const maxCommissionRate = percentStringToDecimal(data.maxCommissionRate)
+    const maxCommissionChangeRate = percentStringToDecimal(data.maxCommissionChangeRate)
 
     // Build MsgCreateValidator
     // The DirectSigner will encode this using the registered encoders
@@ -713,7 +757,8 @@ export async function editValidatorTransaction(
   _address: string,
   data: ValidatorEditFormData,
   validatorAddress: string,
-  _chainId: string
+  _chainId: string,
+  currentCommissionRate?: string
 ) {
   try {
     // Validate and convert commission rate if provided (percentage to decimal)
@@ -723,7 +768,7 @@ export async function editValidatorTransaction(
       if (isNaN(ratePercent) || ratePercent < 0 || ratePercent > 100) {
         throw new Error('Commission rate must be between 0 and 100%')
       }
-      commissionRate = (ratePercent / 100).toFixed(18)
+      commissionRate = percentStringToDecimal(data.commissionRate)
     }
 
     // Build message value - only include commissionRate if it's defined
@@ -738,7 +783,16 @@ export async function editValidatorTransaction(
       validatorAddress: validatorAddress,
     }
     
-    // Only include commissionRate if it's provided
+    // Only include commissionRate if it's provided and changed
+    if (commissionRate !== undefined) {
+      const normalizedCurrentRate = currentCommissionRate
+        ? normalizeDecimalString(currentCommissionRate, 18)
+        : undefined
+      if (normalizedCurrentRate && normalizedCurrentRate === commissionRate) {
+        commissionRate = undefined
+      }
+    }
+
     if (commissionRate !== undefined) {
       msgValue.commissionRate = commissionRate
     }
