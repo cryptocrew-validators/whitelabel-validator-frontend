@@ -1,21 +1,23 @@
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { delegationSchema, DelegationFormData } from '../utils/validation'
-import { DelegationInfo } from '../types'
+import { DelegationInfo, ValidatorInfo } from '../types'
 
 interface UndelegateFormProps {
   validatorAddress: string
   onSubmit: (data: DelegationFormData) => Promise<void>
   isSubmitting: boolean
   currentDelegation: DelegationInfo | null
+  validator: ValidatorInfo | null
 }
 
-export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, currentDelegation }: UndelegateFormProps) {
+export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, currentDelegation, validator }: UndelegateFormProps) {
   const {
     register,
     handleSubmit,
     formState: { errors },
     setValue,
+    control,
   } = useForm<DelegationFormData>({
     resolver: zodResolver(delegationSchema),
   })
@@ -23,9 +25,18 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
   // Pre-fill validator address
   setValue('validatorAddress', validatorAddress)
 
+  // Watch the amount field to check for min-self-delegation violation
+  const amount = useWatch({ control, name: 'amount' })
+
   const handleMaxClick = () => {
-    if (currentDelegation && currentDelegation.balance) {
-      // Convert balance from base units (1e18) to INJ
+    if (currentDelegation && currentDelegation.balance && validator) {
+      // Calculate max undelegation: current delegation - min self delegation
+      const currentDelegationInInj = parseFloat(currentDelegation.balance.amount) / 1e18
+      const minSelfDelegationInInj = parseFloat(validator.minSelfDelegation) / 1e18
+      const maxUndelegation = Math.max(0, currentDelegationInInj - minSelfDelegationInInj)
+      setValue('amount', maxUndelegation.toFixed(4))
+    } else if (currentDelegation && currentDelegation.balance) {
+      // If no validator info, just use current delegation
       const balanceInInj = parseFloat(currentDelegation.balance.amount) / 1e18
       setValue('amount', balanceInInj.toFixed(4))
     }
@@ -35,6 +46,22 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
   const currentDelegationInInj = currentDelegation && currentDelegation.balance
     ? (parseFloat(currentDelegation.balance.amount) / 1e18).toFixed(4)
     : '0.0000'
+
+  // Calculate min self delegation in INJ
+  const minSelfDelegationInInj = validator
+    ? (parseFloat(validator.minSelfDelegation) / 1e18).toFixed(4)
+    : '0.0000'
+
+  // Calculate maximum allowed undelegation
+  const maxUndelegationInInj = currentDelegation && validator
+    ? Math.max(0, parseFloat(currentDelegationInInj) - parseFloat(minSelfDelegationInInj)).toFixed(4)
+    : currentDelegationInInj
+
+  // Check if the entered amount would violate min-self-delegation
+  const amountValue = amount ? parseFloat(amount) : 0
+  const wouldViolateMinSelfDelegation = currentDelegation && validator && amountValue > 0
+    ? (parseFloat(currentDelegationInInj) - amountValue) < parseFloat(minSelfDelegationInInj)
+    : false
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="undelegate-form">
@@ -82,9 +109,29 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
         {errors.amount && (
           <span className="error">{errors.amount.message}</span>
         )}
+        {wouldViolateMinSelfDelegation && (
+          <div style={{ 
+            marginTop: '0.5rem', 
+            padding: '0.75rem', 
+            backgroundColor: '#ff6b6b20', 
+            border: '1px solid #ff6b6b', 
+            borderRadius: '4px',
+            color: '#ff6b6b'
+          }}>
+            <strong>⚠️ Warning:</strong> Unbonding this amount would violate the minimum self-delegation requirement.
+            <br /><br />
+            Current self-delegation: {currentDelegationInInj} INJ
+            <br />
+            Minimum self-delegation: {minSelfDelegationInInj} INJ
+            <br />
+            Maximum allowed undelegation: {maxUndelegationInInj} INJ
+            <br /><br />
+            <strong>If you proceed, the validator will be jailed.</strong>
+          </div>
+        )}
       </div>
 
-      <button type="submit" disabled={isSubmitting}>
+      <button type="submit" disabled={isSubmitting || wouldViolateMinSelfDelegation}>
         {isSubmitting ? 'Submitting...' : 'Undelegate'}
       </button>
     </form>

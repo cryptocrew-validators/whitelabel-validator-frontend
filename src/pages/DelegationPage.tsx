@@ -4,7 +4,7 @@ import { DelegateForm } from '../components/DelegateForm'
 import { UndelegateForm } from '../components/UndelegateForm'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { DelegationFormData } from '../utils/validation'
-import { TransactionStatus as TxStatus, DelegationInfo, UnbondingDelegation, ValidatorInfo } from '../types'
+import { TransactionStatus as TxStatus, DelegationInfo, ValidatorInfo } from '../types'
 import { delegateTransaction, undelegateTransaction } from '../services/transactions'
 import { QueryService } from '../services/queries'
 import { useNetwork } from '../contexts/NetworkContext'
@@ -19,7 +19,6 @@ export default function DelegationPage() {
   const [validatorAddress, setValidatorAddress] = useState<string>('')
   const [validator, setValidator] = useState<ValidatorInfo | null>(null)
   const [delegation, setDelegation] = useState<DelegationInfo | null>(null)
-  const [unbonding, setUnbonding] = useState<UnbondingDelegation | null>(null)
   const [availableBalance, setAvailableBalance] = useState<string>('0')
   const [loading, setLoading] = useState(false)
   const [loadingValidator, setLoadingValidator] = useState(false)
@@ -107,12 +106,8 @@ export default function DelegationPage() {
     setLoading(true)
     try {
       const queryService = new QueryService(network)
-      const [delegationInfo, unbondingInfo] = await Promise.all([
-        queryService.getDelegation(address, validatorAddress),
-        queryService.getUnbondingDelegation(address, validatorAddress),
-      ])
+      const delegationInfo = await queryService.getDelegation(address, validatorAddress)
       setDelegation(delegationInfo)
-      setUnbonding(unbondingInfo)
     } catch (error) {
       console.error('Failed to load delegation info:', error)
     } finally {
@@ -237,27 +232,6 @@ export default function DelegationPage() {
             <div>Loading delegation information...</div>
           ) : (
             <>
-              {delegation && (
-                <div className="info-section">
-                  <h3>Current Delegation</h3>
-                  <p>Shares: {delegation.shares}</p>
-                  <p>Balance (raw): {delegation.balance.amount} {delegation.balance.denom}</p>
-                  <p>Balance (INJ): {(parseFloat(delegation.balance.amount) / 1e18).toFixed(4)} INJ</p>
-                </div>
-              )}
-
-              {unbonding && unbonding.entries.length > 0 && (
-                <div className="info-section">
-                  <h3>Unbonding Delegations</h3>
-                  {unbonding.entries.map((entry, index) => (
-                    <div key={index}>
-                      <p>Balance: {entry.balance} INJ</p>
-                      <p>Completion Time: {new Date(entry.completionTime).toLocaleString()}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <DelegateForm
                 validatorAddress={validatorAddress}
                 onSubmit={handleDelegate}
@@ -270,6 +244,7 @@ export default function DelegationPage() {
                 onSubmit={handleUndelegate}
                 isSubmitting={txStatus.status === 'pending'}
                 currentDelegation={delegation}
+                validator={validator}
               />
               
               <TransactionStatus 
