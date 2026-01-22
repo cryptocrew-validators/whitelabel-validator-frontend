@@ -4,21 +4,30 @@ import { DelegateForm } from '../components/DelegateForm'
 import { UndelegateForm } from '../components/UndelegateForm'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { DelegationFormData } from '../utils/validation'
-import { TransactionStatus as TxStatus, DelegationInfo, UnbondingDelegation } from '../types'
+import { TransactionStatus as TxStatus, DelegationInfo, ValidatorInfo } from '../types'
 import { delegateTransaction, undelegateTransaction } from '../services/transactions'
 import { QueryService } from '../services/queries'
 import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
+import { toValidatorOperatorAddress } from '../utils/address'
+import { getChainConfig } from '../config/chains'
 
 export default function DelegationPage() {
   const { address, getOfflineSignerDirect, chain } = useChain('injective')
   const { network } = useNetwork()
-  const [delegateTxStatus, setDelegateTxStatus] = useState<TxStatus>({ status: 'idle' })
-  const [undelegateTxStatus, setUndelegateTxStatus] = useState<TxStatus>({ status: 'idle' })
+  const [txStatus, setTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [validatorAddress, setValidatorAddress] = useState<string>('')
+  const [validator, setValidator] = useState<ValidatorInfo | null>(null)
   const [delegation, setDelegation] = useState<DelegationInfo | null>(null)
-  const [unbonding, setUnbonding] = useState<UnbondingDelegation | null>(null)
+  const [availableBalance, setAvailableBalance] = useState<string>('0')
   const [loading, setLoading] = useState(false)
+  const [loadingValidator, setLoadingValidator] = useState(false)
+
+  useEffect(() => {
+    if (address) {
+      loadValidator()
+    }
+  }, [address, network])
 
   useEffect(() => {
     if (address && validatorAddress) {
@@ -26,18 +35,79 @@ export default function DelegationPage() {
     }
   }, [address, validatorAddress, network])
 
+  useEffect(() => {
+    if (address) {
+      loadBalance()
+    }
+  }, [address, network])
+
+  const loadBalance = async () => {
+    if (!address) return
+    
+    try {
+      const config = getChainConfig(network)
+      // Use REST API: GET /cosmos/bank/v1beta1/balances/{address}
+      const url = `${config.rest}/cosmos/bank/v1beta1/balances/${address}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          setAvailableBalance('0')
+          return
+        }
+        console.warn('Failed to fetch balance:', response.statusText)
+        setAvailableBalance('0')
+        return
+      }
+      
+      const data = await response.json()
+      const balances = data.balances || []
+      
+      // Find the INJ balance
+      const injBalance = balances.find((b: any) => b.denom === 'inj')
+      const balanceAmount = injBalance?.amount || '0'
+      
+      setAvailableBalance(balanceAmount)
+    } catch (error) {
+      console.warn('Failed to load balance:', error)
+      setAvailableBalance('0')
+    }
+  }
+
+  const loadValidator = async () => {
+    if (!address) return
+    
+    setLoadingValidator(true)
+    try {
+      const queryService = new QueryService(network)
+      // Derive validator operator address from wallet account (same as createValidatorTransaction)
+      const derivedValidatorAddress = toValidatorOperatorAddress(address)
+      const validatorInfo = await queryService.getValidator(derivedValidatorAddress)
+      
+      if (validatorInfo) {
+        setValidator(validatorInfo)
+        setValidatorAddress(derivedValidatorAddress)
+      } else {
+        setValidator(null)
+        setValidatorAddress('')
+      }
+    } catch (error) {
+      console.error('Failed to load validator:', error)
+      setValidator(null)
+      setValidatorAddress('')
+    } finally {
+      setLoadingValidator(false)
+    }
+  }
+
   const loadDelegationInfo = async () => {
     if (!address || !validatorAddress) return
     
     setLoading(true)
     try {
       const queryService = new QueryService(network)
-      const [delegationInfo, unbondingInfo] = await Promise.all([
-        queryService.getDelegation(address, validatorAddress),
-        queryService.getUnbondingDelegation(address, validatorAddress),
-      ])
+      const delegationInfo = await queryService.getDelegation(address, validatorAddress)
       setDelegation(delegationInfo)
-      setUnbonding(unbondingInfo)
     } catch (error) {
       console.error('Failed to load delegation info:', error)
     } finally {
@@ -47,12 +117,12 @@ export default function DelegationPage() {
 
   const handleDelegate = async (data: DelegationFormData) => {
     if (!address || !getOfflineSignerDirect) {
-      setDelegateTxStatus({ status: 'error', error: 'Wallet not connected' })
+      setTxStatus({ status: 'error', error: 'Wallet not connected' })
       return
     }
 
     try {
-      setDelegateTxStatus({ status: 'pending' })
+      setTxStatus({ status: 'pending' })
       
       // Get direct offline signer from Cosmos Kit for protobuf signing
       const offlineSigner = getOfflineSignerDirect()
@@ -64,29 +134,39 @@ export default function DelegationPage() {
       
       const result = await delegateTransaction(signer, address, data, chain.chain_id)
       
-      setDelegateTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
-      
-      // Reload delegation info
-      await loadDelegationInfo()
+      // Only proceed if transaction succeeded (code 0)
+      if (result.transactionHash) {
+        setTxStatus({ 
+          status: 'success', 
+          hash: result.transactionHash,
+          rawLog: (result as any).rawLog,
+        })
+        
+        // Reload delegation info and balance
+        await Promise.all([loadDelegationInfo(), loadBalance()])
+      } else {
+        throw new Error('Transaction completed but no transaction hash was returned')
+      }
     } catch (error: any) {
-      setDelegateTxStatus({ 
+      console.error('Delegation error:', error)
+      // Try to extract raw log from error if available
+      const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
+      setTxStatus({ 
         status: 'error', 
-        error: error.message || 'Failed to delegate' 
+        error: error.message || 'Failed to delegate',
+        rawLog: rawLog,
       })
     }
   }
 
   const handleUndelegate = async (data: DelegationFormData) => {
     if (!address || !getOfflineSignerDirect) {
-      setUndelegateTxStatus({ status: 'error', error: 'Wallet not connected' })
+      setTxStatus({ status: 'error', error: 'Wallet not connected' })
       return
     }
 
     try {
-      setUndelegateTxStatus({ status: 'pending' })
+      setTxStatus({ status: 'pending' })
       
       // Get direct offline signer from Cosmos Kit for protobuf signing
       const offlineSigner = getOfflineSignerDirect()
@@ -98,17 +178,27 @@ export default function DelegationPage() {
       
       const result = await undelegateTransaction(signer, address, data, chain.chain_id)
       
-      setUndelegateTxStatus({ 
-        status: 'success', 
-        hash: result.transactionHash 
-      })
-      
-      // Reload delegation info
-      await loadDelegationInfo()
+      // Only proceed if transaction succeeded (code 0)
+      if (result.transactionHash) {
+        setTxStatus({ 
+          status: 'success', 
+          hash: result.transactionHash,
+          rawLog: (result as any).rawLog,
+        })
+        
+        // Reload delegation info and balance
+        await Promise.all([loadDelegationInfo(), loadBalance()])
+      } else {
+        throw new Error('Transaction completed but no transaction hash was returned')
+      }
     } catch (error: any) {
-      setUndelegateTxStatus({ 
+      console.error('Undelegation error:', error)
+      // Try to extract raw log from error if available
+      const rawLog = error?.rawLog || error?.txResponse?.rawLog || error?.txResult?.log
+      setTxStatus({ 
         status: 'error', 
-        error: error.message || 'Failed to undelegate' 
+        error: error.message || 'Failed to undelegate',
+        rawLog: rawLog,
       })
     }
   }
@@ -121,67 +211,41 @@ export default function DelegationPage() {
     <div className="page">
       <h1>Delegation Management</h1>
       
-      {address && (
+      {!address ? (
+        <div className="error-message">
+          Please connect your wallet to manage delegations.
+        </div>
+      ) : loadingValidator ? (
+        <div>Loading validator information...</div>
+      ) : !validator ? (
+        <div className="error-message">
+          No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
+        </div>
+      ) : (
         <>
-          <div className="form-group">
-            <label>
-              Validator Operator Address:
-              <input
-                type="text"
-                value={validatorAddress}
-                onChange={(e) => setValidatorAddress(e.target.value)}
-                placeholder="injvaloper1..."
-              />
-            </label>
-          </div>
-
-          {validatorAddress && (
+          {loading ? (
+            <div>Loading delegation information...</div>
+          ) : (
             <>
-              {loading ? (
-                <div>Loading delegation information...</div>
-              ) : (
-                <>
-                  {delegation && (
-                    <div className="info-section">
-                      <h3>Current Delegation</h3>
-                      <p>Shares: {delegation.shares}</p>
-                      <p>Balance: {delegation.balance.amount} {delegation.balance.denom}</p>
-                    </div>
-                  )}
+              <DelegateForm
+                validatorAddress={validatorAddress}
+                onSubmit={handleDelegate}
+                isSubmitting={txStatus.status === 'pending'}
+                availableBalance={availableBalance}
+              />
 
-                  {unbonding && unbonding.entries.length > 0 && (
-                    <div className="info-section">
-                      <h3>Unbonding Delegations</h3>
-                      {unbonding.entries.map((entry, index) => (
-                        <div key={index}>
-                          <p>Balance: {entry.balance} INJ</p>
-                          <p>Completion Time: {new Date(entry.completionTime).toLocaleString()}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <DelegateForm
-                    validatorAddress={validatorAddress}
-                    onSubmit={handleDelegate}
-                    isSubmitting={delegateTxStatus.status === 'pending'}
-                  />
-                  <TransactionStatus 
-                    status={delegateTxStatus} 
-                    explorerUrl={explorerUrl}
-                  />
-
-                  <UndelegateForm
-                    validatorAddress={validatorAddress}
-                    onSubmit={handleUndelegate}
-                    isSubmitting={undelegateTxStatus.status === 'pending'}
-                  />
-                  <TransactionStatus 
-                    status={undelegateTxStatus} 
-                    explorerUrl={explorerUrl}
-                  />
-                </>
-              )}
+              <UndelegateForm
+                validatorAddress={validatorAddress}
+                onSubmit={handleUndelegate}
+                isSubmitting={txStatus.status === 'pending'}
+                currentDelegation={delegation}
+                validator={validator}
+              />
+              
+              <TransactionStatus 
+                status={txStatus} 
+                explorerUrl={explorerUrl}
+              />
             </>
           )}
         </>

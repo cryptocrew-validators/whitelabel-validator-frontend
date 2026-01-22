@@ -42,11 +42,18 @@ function extractRpcErrorDetails(error: any, fallbackMessage: string, rawMessage:
     detailedError = error.cause.message
   }
 
+  // Check for transaction hash in multiple places
   const txHash =
     rawMessage.match(/0x[a-fA-F0-9]{64}/)?.[0] ||
+    rawMessage.match(/[a-fA-F0-9]{64}/)?.[0] || // Also check for hex without 0x prefix
     error?.txHash ||
     error?.transactionHash ||
-    error?.data?.txHash
+    error?.data?.txHash ||
+    error?.response?.data?.txHash ||
+    error?.response?.data?.tx_response?.txhash ||
+    error?.response?.data?.txhash ||
+    error?.cause?.txHash ||
+    error?.cause?.transactionHash
 
   return {
     detailedError,
@@ -87,6 +94,58 @@ function buildRpcErrorMessage(error: any, errorMsg: string) {
     `Error: ${detailedError} ` +
     `(Code: ${code || 'unknown'})`
   )
+}
+
+function safeJsonStringify(value: unknown) {
+  return JSON.stringify(
+    value,
+    (_key, val) => (typeof val === 'bigint' ? val.toString() : val),
+    2
+  )
+}
+
+function formatScaledDecimal(value: bigint, scale: number): string {
+  const isNegative = value < 0n
+  const absValue = isNegative ? -value : value
+  const divisor = 10n ** BigInt(scale)
+  const integerPart = absValue / divisor
+  const fractionalPart = absValue % divisor
+  const fractionalString = fractionalPart.toString().padStart(scale, '0')
+  return `${isNegative ? '-' : ''}${integerPart.toString()}.${fractionalString}`
+}
+
+function decimalStringToScaled(value: string, scale: number): bigint {
+  const normalized = value.trim()
+  if (!normalized) {
+    return 0n
+  }
+
+  const [integerPart = '0', fractionalPart = ''] = normalized.split('.')
+  if (!/^\d+$/.test(integerPart) || (fractionalPart && !/^\d+$/.test(fractionalPart))) {
+    throw new Error('Commission rate must be between 0 and 100%')
+  }
+
+  const multiplier = 10n ** BigInt(scale)
+  const paddedFraction = (fractionalPart + '0'.repeat(scale)).slice(0, scale)
+  return BigInt(integerPart) * multiplier + BigInt(paddedFraction || '0')
+}
+
+function normalizeDecimalString(value: string, scale: number): string {
+  const scaled = decimalStringToScaled(value, scale)
+  return formatScaledDecimal(scaled, scale)
+}
+
+function percentStringToDecimal(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error('Commission rate must be between 0 and 100%')
+  }
+
+  const scale = 18
+  const percentScaled = decimalStringToScaled(normalized, scale)
+  const decimalScaled = percentScaled / 100n
+
+  return formatScaledDecimal(decimalScaled, scale)
 }
 
 /**
@@ -244,11 +303,11 @@ export function createOrchestratorMessage(
   }
 
   const msg: EncodeObject = {
-    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+    typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
     value: {
-      validator: data.validatorAddress,
+      sender: address,
       orchestrator: data.orchestratorAddress,
-      ethereum: data.ethereumAddress,
+      ethAddress: data.ethereumAddress,
     },
   }
 
@@ -331,9 +390,9 @@ export async function createValidatorTransaction(
     const minSelfDelegationBase = Math.floor(minSelfDelegationAmount * 1e18).toString()
 
     // Convert commission rates from percentage to decimal (0-100% -> 0-1)
-    const commissionRate = (parseFloat(data.commissionRate) / 100).toFixed(18)
-    const maxCommissionRate = (parseFloat(data.maxCommissionRate) / 100).toFixed(18)
-    const maxCommissionChangeRate = (parseFloat(data.maxCommissionChangeRate) / 100).toFixed(18)
+    const commissionRate = percentStringToDecimal(data.commissionRate)
+    const maxCommissionRate = percentStringToDecimal(data.maxCommissionRate)
+    const maxCommissionChangeRate = percentStringToDecimal(data.maxCommissionChangeRate)
 
     // Build MsgCreateValidator
     // The DirectSigner will encode this using the registered encoders
@@ -544,56 +603,98 @@ export async function registerOrchestratorTransaction(
   _chainId: string
 ) {
   try {
-    // Derive validator operator address from the wallet account (same as createValidatorTransaction)
-    const validatorAddress = toValidatorOperatorAddress(address)
+    console.log('[ORCHESTRATOR REGISTRATION] Starting transaction')
+    console.log('[ORCHESTRATOR REGISTRATION] Input data:', {
+      address,
+      orchestratorAddress: data.orchestratorAddress,
+      ethereumAddress: data.ethereumAddress,
+    })
 
-    // MsgSetOrchestratorAddress from Peggy module
+    // MsgSetOrchestratorAddresses from Peggy module
     // Note: This message type may need to be imported from Injective SDK
     const msg = {
-      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddress',
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
       value: {
-        validator: validatorAddress, // Use derived validator operator address
+        sender: address, // Use account address as sender
         orchestrator: data.orchestratorAddress,
-        ethereum: data.ethereumAddress,
+        ethAddress: data.ethereumAddress,
       },
     }
 
+    console.log('[ORCHESTRATOR REGISTRATION] Message before encoding:', JSON.stringify(msg, null, 2))
+
     // Estimate gas first
+    console.log('[ORCHESTRATOR REGISTRATION] Estimating gas...')
     const estimatedGas = await estimateGas(signer, [msg])
+    console.log('[ORCHESTRATOR REGISTRATION] Estimated gas:', estimatedGas)
     
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }], // 0.5 INJ
       gas: estimatedGas,
     }
 
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      broadcastOptions
-    )
+    console.log('[ORCHESTRATOR REGISTRATION] Fee:', fee)
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast options:', broadcastOptions)
+    console.log('[ORCHESTRATOR REGISTRATION] Calling signAndBroadcast...')
+
+    let result
+    try {
+      result = await signer.signAndBroadcast(
+        {
+          messages: [msg],
+          fee,
+        },
+        broadcastOptions
+      )
+      console.log('[ORCHESTRATOR REGISTRATION] After signAndBroadcast, result:', {
+        transactionHash: result.transactionHash,
+        broadcastResponse: result.broadcastResponse,
+      })
+    } catch (signError: any) {
+      console.error('[ORCHESTRATOR REGISTRATION] Error during signAndBroadcast:', signError)
+      console.error('[ORCHESTRATOR REGISTRATION] Sign error details:', {
+        message: signError?.message,
+        code: signError?.code,
+        data: signError?.data,
+        response: signError?.response,
+        stack: signError?.stack,
+        cause: signError?.cause,
+      })
+      throw signError
+    }
     
     // For commit mode, check the broadcastResponse first
     const broadcastResponse = result.broadcastResponse as any
+    console.log('[ORCHESTRATOR REGISTRATION] Broadcast response:', safeJsonStringify(broadcastResponse))
+    
     if (broadcastResponse && 'txResult' in broadcastResponse) {
       const txResult = broadcastResponse.txResult
+      console.log('[ORCHESTRATOR REGISTRATION] TxResult from broadcastResponse:', safeJsonStringify(txResult))
       if (txResult && txResult.code !== 0) {
         const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in broadcastResponse:', errorLog)
         throw new Error(errorLog)
       }
     }
     
     // Wait for transaction to be finalized in a block
+    console.log('[ORCHESTRATOR REGISTRATION] Waiting for transaction finalization...')
     let txResponse
     try {
       txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      console.log('[ORCHESTRATOR REGISTRATION] Transaction finalized:', {
+        code: txResponse.code,
+        hash: (txResponse as any).transactionHash || (txResponse as any).txhash,
+        rawLog: txResponse.rawLog,
+      })
     } catch (waitError: any) {
+      console.error('[ORCHESTRATOR REGISTRATION] Error waiting for transaction:', waitError)
       // If wait fails but we have a broadcastResponse with txResult, use that
       if (broadcastResponse && 'txResult' in broadcastResponse) {
         const txResult = broadcastResponse.txResult
         if (txResult && txResult.code !== 0) {
           const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          console.error('[ORCHESTRATOR REGISTRATION] Transaction failed in txResult:', errorLog)
           throw new Error(errorLog)
         }
       }
@@ -603,15 +704,32 @@ export async function registerOrchestratorTransaction(
     // Check if transaction actually succeeded (code 0 = success)
     if (txResponse.code !== 0) {
       const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      console.error('[ORCHESTRATOR REGISTRATION] Transaction failed with code:', txResponse.code, 'Error:', errorMsg)
       throw new Error(errorMsg)
     }
     
+    console.log('[ORCHESTRATOR REGISTRATION] Transaction succeeded!')
     return {
       ...result,
       txResponse, // Include the finalized tx response
       rawLog: txResponse.rawLog, // Include raw log for display
     }
   } catch (error: any) {
+    console.error('[ORCHESTRATOR REGISTRATION] Error caught:', error)
+    console.error('[ORCHESTRATOR REGISTRATION] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      data: error?.data,
+      response: error?.response,
+      stack: error?.stack,
+      cause: error?.cause,
+      txHash: error?.txHash,
+      transactionHash: error?.transactionHash,
+      rawLog: error?.rawLog,
+      txResponse: error?.txResponse,
+      txResult: error?.txResult,
+    })
+    
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
     if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
@@ -639,7 +757,8 @@ export async function editValidatorTransaction(
   _address: string,
   data: ValidatorEditFormData,
   validatorAddress: string,
-  _chainId: string
+  _chainId: string,
+  currentCommissionRate?: string
 ) {
   try {
     // Validate and convert commission rate if provided (percentage to decimal)
@@ -649,83 +768,192 @@ export async function editValidatorTransaction(
       if (isNaN(ratePercent) || ratePercent < 0 || ratePercent > 100) {
         throw new Error('Commission rate must be between 0 and 100%')
       }
-      commissionRate = (ratePercent / 100).toFixed(18)
+      commissionRate = percentStringToDecimal(data.commissionRate)
+    }
+
+    // Build message value - only include commissionRate if it's defined
+    const msgValue: any = {
+      description: {
+        moniker: data.moniker,
+        identity: data.identity || '',
+        website: data.website || '',
+        securityContact: data.securityContact || '',
+        details: data.details || '',
+      },
+      validatorAddress: validatorAddress,
+    }
+    
+    // Only include commissionRate if it's provided and changed
+    if (commissionRate !== undefined) {
+      const normalizedCurrentRate = currentCommissionRate
+        ? normalizeDecimalString(currentCommissionRate, 18)
+        : undefined
+      if (normalizedCurrentRate && normalizedCurrentRate === commissionRate) {
+        commissionRate = undefined
+      }
+    }
+
+    if (commissionRate !== undefined) {
+      msgValue.commissionRate = commissionRate
     }
 
     const msg = {
       typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
-      value: {
-        description: {
-          moniker: data.moniker,
-          identity: data.identity || '',
-          website: data.website || '',
-          securityContact: data.securityContact || '',
-          details: data.details || '',
-        },
-        commissionRate: commissionRate,
-        validatorAddress: validatorAddress,
-      },
+      value: msgValue,
     }
+
+    // Log the message structure before encoding
+    console.log('[EDIT VALIDATOR] Message before encoding:', {
+      typeUrl: msg.typeUrl,
+      value: JSON.parse(JSON.stringify(msg.value)),
+      commissionRateProvided: data.commissionRate !== undefined,
+      commissionRateValue: commissionRate,
+    })
 
     // Estimate gas first
     const estimatedGas = await estimateGas(signer, [msg])
+    console.log('[EDIT VALIDATOR] Estimated gas:', estimatedGas)
     
     const fee: StdFee = {
       amount: [{ denom: 'inj', amount: '500000000000000000' }],
       gas: estimatedGas,
     }
 
-    const result = await signer.signAndBroadcast(
-      {
-        messages: [msg],
-        fee,
-      },
-      broadcastOptions
-    )
-    
-    // For commit mode, check the broadcastResponse first
-    const broadcastResponse = result.broadcastResponse as any
-    if (broadcastResponse && 'txResult' in broadcastResponse) {
-      const txResult = broadcastResponse.txResult
-      if (txResult && txResult.code !== 0) {
-        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
-        throw new Error(errorLog)
-      }
-    }
-    
-    // Wait for transaction to be finalized in a block
-    let txResponse
+    console.log('[EDIT VALIDATOR] Fee:', fee)
+
     try {
-      txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
-    } catch (waitError: any) {
-      // If wait fails but we have a broadcastResponse with txResult, use that
+      // Use signAndBroadcast with 'commit' mode to wait for confirmation
+      const result = await signer.signAndBroadcast(
+        {
+          messages: [msg],
+          fee,
+        },
+        broadcastOptions
+      )
+      
+      console.log('[EDIT VALIDATOR] After broadcast - Initial result:', {
+        transactionHash: result.transactionHash,
+        rawResponse: result.rawResponse,
+        broadcastResponse: result.broadcastResponse,
+      })
+      
+      // For commit mode, check the broadcastResponse first
+      // It contains checkTx and txResult which tell us if the transaction failed
+      const broadcastResponse = result.broadcastResponse as any
       if (broadcastResponse && 'txResult' in broadcastResponse) {
         const txResult = broadcastResponse.txResult
         if (txResult && txResult.code !== 0) {
-          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          // Transaction failed in deliverTx - extract the error log
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+          console.error('[EDIT VALIDATOR] Transaction failed:', {
+            transactionHash: result.transactionHash,
+            code: txResult.code,
+            codespace: txResult.codespace,
+            log: txResult.log,
+            gasUsed: txResult.gasUsed?.toString(),
+            gasWanted: txResult.gasWanted?.toString(),
+          })
           throw new Error(errorLog)
         }
       }
-      throw waitError
-    }
-    
-    // Check if transaction actually succeeded (code 0 = success)
-    if (txResponse.code !== 0) {
-      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
-      throw new Error(errorMsg)
-    }
-    
-    return {
-      ...result,
-      txResponse, // Include the finalized tx response
-      rawLog: txResponse.rawLog, // Include raw log for display
+      
+      // Wait for transaction to be finalized in a block
+      // The wait() method polls until the transaction is included and returns the final TxResponse
+      let txResponse
+      try {
+        txResponse = await result.wait(60000, 2000) // 60s timeout, poll every 2s
+      } catch (waitError: any) {
+        // If wait fails but we have a broadcastResponse with txResult, use that
+        if (broadcastResponse && 'txResult' in broadcastResponse) {
+          const txResult = broadcastResponse.txResult
+          if (txResult && txResult.code !== 0) {
+            const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+            throw new Error(errorLog)
+          }
+        }
+        throw waitError
+      }
+      
+      console.log('[EDIT VALIDATOR] After finalization - Transaction finalized:', {
+        transactionHash: result.transactionHash,
+        code: txResponse.code,
+        height: txResponse.height,
+        rawLog: txResponse.rawLog,
+      })
+      
+      // Check if transaction actually succeeded (code 0 = success)
+      if (txResponse.code !== 0) {
+        const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+        throw new Error(errorMsg)
+      }
+      
+      return {
+        ...result,
+        txResponse, // Include the finalized tx response
+        rawLog: txResponse.rawLog, // Include raw log for display
+      }
+    } catch (signError: any) {
+      console.log('[EDIT VALIDATOR] Sign/broadcast error:', {
+        message: signError?.message,
+        code: signError?.code,
+        name: signError?.name,
+        stack: signError?.stack,
+        // Check for signed transaction bytes in various places
+        txBytes: signError?.txBytes,
+        signedTx: signError?.signedTx,
+        transaction: signError?.transaction,
+        // Check for transaction hash in error (might have been broadcast despite error)
+        txHash: signError?.txHash,
+        transactionHash: signError?.transactionHash,
+        // Check for response data that might contain transaction info
+        response: signError?.response,
+        data: signError?.data,
+        cause: signError?.cause,
+      })
+      
+      // Check if transaction hash exists in error (transaction might have been broadcast)
+      const txHash = signError?.txHash || signError?.transactionHash || signError?.data?.txHash || signError?.response?.data?.txHash
+      if (txHash) {
+        console.log('[EDIT VALIDATOR] Transaction hash found in error, transaction may have been broadcast:', txHash)
+        // If we have a transaction hash, the transaction might have been broadcast successfully
+        // Try to wait for it and check its status
+        try {
+          // We need to create a result-like object to use wait()
+          // But since we don't have the actual result, we'll need to query the transaction
+          // For now, just log that we found a hash
+          console.warn('[EDIT VALIDATOR] Transaction may have been broadcast with hash:', txHash)
+        } catch (e) {
+          console.error('[EDIT VALIDATOR] Failed to check transaction status:', e)
+        }
+      }
+      
+      // If we can get the signed transaction bytes from the error, log them
+      const signedTxBytes = signError?.txBytes || signError?.signedTx?.txBytes || signError?.transaction?.txBytes
+      if (signedTxBytes && signedTxBytes instanceof Uint8Array) {
+        const hexArray: string[] = []
+        for (let i = 0; i < signedTxBytes.length; i++) {
+          hexArray.push(signedTxBytes[i].toString(16).padStart(2, '0'))
+        }
+        console.log('[EDIT VALIDATOR] Signed transaction bytes:', {
+          length: signedTxBytes.length,
+          base64: btoa(String.fromCharCode(...signedTxBytes)),
+          hex: hexArray.join('').substring(0, 200) + '...', // Truncate for readability
+        })
+      }
+      
+      // Re-throw the error so it can be handled by the outer catch block
+      throw signError
     }
   } catch (error: any) {
     // Enhance error messages
     const errorMsg = error?.message || String(error) || ''
+    
+    // Check if user rejected the transaction
     if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
       throw new Error('Transaction was rejected. Please approve the transaction in your wallet.')
     }
+    
+    // Check for specific blockchain errors
     if (errorMsg.includes('insufficient funds')) {
       throw new Error('Insufficient balance. Please ensure you have enough INJ for transaction fees.')
     }
@@ -735,10 +963,16 @@ export async function editValidatorTransaction(
     if (errorMsg.includes('unauthorized')) {
       throw new Error('You are not authorized to edit this validator.')
     }
+    
+    // For RPC errors, provide helpful message
+    // The transaction might have been signed but broadcast failed
     if (isRpcErrorMessage(errorMsg)) {
+      // Log full error details for debugging
       logRpcError(error)
       throw new Error(buildRpcErrorMessage(error, errorMsg))
     }
+    
+    // Re-throw other errors as-is
     throw error
   }
 }
@@ -939,6 +1173,95 @@ export async function undelegateTransaction(
     }
     if (errorMsg.includes('validator not found')) {
       throw new Error('Validator not found. Please verify the validator address is correct.')
+    }
+    if (isRpcErrorMessage(errorMsg)) {
+      logRpcError(error)
+      throw new Error(buildRpcErrorMessage(error, errorMsg))
+    }
+    throw error
+  }
+}
+
+export async function unjailTransaction(
+  signer: DirectSigner,
+  validatorAddress: string,
+  _chainId: string
+) {
+  try {
+    const msg = {
+      typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+      value: {
+        validatorAddr: validatorAddress,
+      },
+    }
+
+    // Estimate gas first
+    const estimatedGas = await estimateGas(signer, [msg])
+    
+    const fee: StdFee = {
+      amount: [{ denom: 'inj', amount: '500000000000000000' }],
+      gas: estimatedGas,
+    }
+
+    const result = await signer.signAndBroadcast(
+      {
+        messages: [msg],
+        fee,
+      },
+      broadcastOptions
+    )
+    
+    // For commit mode, check the broadcastResponse first
+    const broadcastResponse = result.broadcastResponse as any
+    if (broadcastResponse && 'txResult' in broadcastResponse) {
+      const txResult = broadcastResponse.txResult
+      if (txResult && txResult.code !== 0) {
+        const errorLog = txResult.log || `Transaction failed with code ${txResult.code} (codespace: ${txResult.codespace || 'unknown'})`
+        throw new Error(errorLog)
+      }
+    }
+    
+    // Wait for transaction to be finalized in a block
+    let txResponse
+    try {
+      txResponse = await result.wait(60000, 2000)
+    } catch (waitError: any) {
+      // If wait fails but we have a broadcastResponse with txResult, use that
+      if (broadcastResponse && 'txResult' in broadcastResponse) {
+        const txResult = broadcastResponse.txResult
+        if (txResult && txResult.code !== 0) {
+          const errorLog = txResult.log || `Transaction failed with code ${txResult.code}`
+          throw new Error(errorLog)
+        }
+      }
+      throw waitError
+    }
+    
+    // Check if transaction actually succeeded (code 0 = success)
+    if (txResponse.code !== 0) {
+      const errorMsg = txResponse.rawLog || `Transaction failed with code ${txResponse.code}`
+      throw new Error(errorMsg)
+    }
+    
+    return {
+      ...result,
+      txResponse, // Include the finalized tx response
+      rawLog: txResponse.rawLog, // Include raw log for display
+    }
+  } catch (error: any) {
+    // Enhance error messages
+    const errorMsg = error?.message || String(error) || ''
+    if (errorMsg.includes('Request rejected') || errorMsg.includes('User rejected')) {
+      throw new Error('Transaction was rejected. Please approve the transaction in your wallet.')
+    }
+    if (errorMsg.includes('insufficient funds')) {
+      throw new Error('Insufficient balance. Please ensure you have enough INJ for transaction fees.')
+    }
+    if (errorMsg.includes('validator not found')) {
+      throw new Error('Validator not found. Please verify the validator address is correct.')
+    }
+    if (errorMsg.includes('validator is not jailed')) {
+      throw new Error('Validator is not jailed. Unjail is only available for jailed validators.')
     }
     if (isRpcErrorMessage(errorMsg)) {
       logRpcError(error)

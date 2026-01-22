@@ -143,20 +143,43 @@ export async function createInjectiveSigner(
       typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
       fromPartial: (obj: any) => obj,
       encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgEditValidator:', {
+          typeUrl: '/cosmos.staking.v1beta1.MsgEditValidator',
+          message,
+        })
+        
         const w = writer || BinaryWriter.create()
         
+        // Field 1: description (Description)
         if (message.description) {
+          console.log('[ENCODER] Encoding description:', message.description)
           Description.encode(message.description, w.uint32(10).fork()).ldelim()
         }
+        
+        // Field 2: validator_address (string)
         if (message.validatorAddress) {
+          console.log('[ENCODER] Encoding validatorAddress:', message.validatorAddress)
           w.uint32(18).string(message.validatorAddress)
         }
-        if (message.commissionRate) {
+        
+        // Field 3: commission_rate (string) - optional
+        if (message.commissionRate !== undefined && message.commissionRate !== null && message.commissionRate !== '') {
+          console.log('[ENCODER] Encoding commissionRate:', message.commissionRate)
           w.uint32(26).string(message.commissionRate)
         }
-        if (message.minSelfDelegation) {
+        
+        // Field 4: min_self_delegation (string) - optional
+        if (message.minSelfDelegation !== undefined && message.minSelfDelegation !== null && message.minSelfDelegation !== '') {
+          console.log('[ENCODER] Encoding minSelfDelegation:', message.minSelfDelegation)
           w.uint32(34).string(message.minSelfDelegation)
         }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded MsgEditValidator bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
         
         return w
       },
@@ -195,6 +218,70 @@ export async function createInjectiveSigner(
         if (message.amount) {
           Coin.encode(message.amount, w.uint32(26).fork()).ldelim()
         }
+        
+        return w
+      },
+    },
+    {
+      typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
+      fromPartial: (obj: any) => obj,
+      encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgSetOrchestratorAddresses:', {
+          typeUrl: '/injective.peggy.v1.MsgSetOrchestratorAddresses',
+          message,
+        })
+        
+        const w = writer || BinaryWriter.create()
+        
+        // Field 1: sender (string)
+        if (message.sender) {
+          console.log('[ENCODER] Encoding sender:', message.sender)
+          w.uint32(10).string(message.sender)
+        }
+        // Field 2: orchestrator (string)
+        if (message.orchestrator) {
+          console.log('[ENCODER] Encoding orchestrator:', message.orchestrator)
+          w.uint32(18).string(message.orchestrator)
+        }
+        // Field 3: ethAddress (string)
+        if (message.ethAddress) {
+          console.log('[ENCODER] Encoding ethAddress:', message.ethAddress)
+          w.uint32(26).string(message.ethAddress)
+        }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded MsgSetOrchestratorAddresses bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
+        
+        return w
+      },
+    },
+    {
+      typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+      fromPartial: (obj: any) => obj,
+      encode: (message: any, writer?: BinaryWriter) => {
+        console.log('[ENCODER] Encoding MsgUnjail:', {
+          typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
+          message,
+        })
+        
+        const w = writer || BinaryWriter.create()
+        
+        // Field 1: validatorAddr (string)
+        if (message.validatorAddr) {
+          console.log('[ENCODER] Encoding validatorAddr:', message.validatorAddr)
+          w.uint32(10).string(message.validatorAddr)
+        }
+        
+        const encoded = w.finish()
+        console.log('[ENCODER] Encoded MsgUnjail bytes:', {
+          length: encoded.length,
+          base64: btoa(String.fromCharCode(...encoded)),
+          hex: Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(''),
+        })
         
         return w
       },

@@ -71,6 +71,38 @@ export function TransactionStatus({ status, explorerUrl }: TransactionStatusProp
     )
   }
 
+  if (status.status === 'warning' && status.warning) {
+    return (
+      <div className="transaction-status warning" style={{
+        padding: '1rem',
+        backgroundColor: '#ffa50020',
+        border: '1px solid #ffa500',
+        borderRadius: '4px',
+        color: '#ffa500'
+      }}>
+        <p style={{ margin: 0 }}>
+          ⚠️ {status.warning}
+        </p>
+      </div>
+    )
+  }
+
+  if (status.status === 'info' && status.info) {
+    return (
+      <div className="transaction-status info" style={{
+        padding: '1rem',
+        backgroundColor: '#4CAF5020',
+        border: '1px solid #4CAF50',
+        borderRadius: '4px',
+        color: '#4CAF50'
+      }}>
+        <p style={{ margin: 0 }}>
+          {status.info}
+        </p>
+      </div>
+    )
+  }
+
   if (status.status === 'error' && status.error) {
     return (
       <div className="transaction-status error">

@@ -47,7 +47,7 @@ export function OrchestratorForm({ onSubmit, isSubmitting }: OrchestratorFormPro
             type="text"
             placeholder="injvaloper1..."
             readOnly
-            style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+            style={{ backgroundColor: '#2a2a2a', cursor: 'not-allowed', color: '#fff' }}
           />
           <small>Derived from your connected wallet address</small>
         </label>
