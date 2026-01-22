@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useChain } from '@cosmos-kit/react'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { TransactionStatus as TxStatus, ValidatorInfo } from '../types'
@@ -15,12 +16,79 @@ export default function UnjailPage() {
   const [validatorAddress, setValidatorAddress] = useState<string>('')
   const [validator, setValidator] = useState<ValidatorInfo | null>(null)
   const [loading, setLoading] = useState(false)
+  const [infoDismissed, setInfoDismissed] = useState(false)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
+  const [profileImageError, setProfileImageError] = useState(false)
 
   useEffect(() => {
     if (address) {
       loadValidator()
     }
   }, [address, network])
+
+  // Load Keybase profile picture when validator changes
+  useEffect(() => {
+    const loadKeybasePicture = async () => {
+      if (!validator?.identity || validator.identity.trim() === '') {
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+        return
+      }
+
+      const identity = validator.identity.trim()
+      console.log('[UnjailPage] Loading Keybase picture for identity:', identity)
+      
+      try {
+        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
+        // Use the lookup API with key_suffix parameter
+        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
+        console.log('[UnjailPage] Fetching Keybase lookup API:', lookupUrl)
+        const response = await fetch(lookupUrl)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('[UnjailPage] Keybase lookup API response:', data)
+          
+          if (data?.status?.code === 0 && data?.them?.length > 0) {
+            const user = data.them[0]
+            if (user?.pictures?.primary?.url) {
+              const pictureUrl = user.pictures.primary.url
+              console.log('[UnjailPage] Found Keybase picture URL:', pictureUrl)
+              setProfileImageUrl(pictureUrl)
+              setProfileImageError(false)
+              return
+            }
+          }
+        }
+        
+        // Fallback: try direct URL for username
+        const directUrl = `https://keybase.io/${identity}/picture`
+        console.log('[UnjailPage] Trying direct Keybase URL:', directUrl)
+        const directResponse = await fetch(directUrl, { method: 'HEAD' })
+        if (directResponse.ok) {
+          setProfileImageUrl(directUrl)
+          setProfileImageError(false)
+          return
+        }
+        
+        // No picture found
+        console.log('[UnjailPage] No Keybase picture found')
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      } catch (error) {
+        console.error('[UnjailPage] Error loading Keybase picture:', error)
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+      }
+    }
+
+    if (validator) {
+      loadKeybasePicture()
+    } else {
+      setProfileImageUrl(null)
+      setProfileImageError(false)
+    }
+  }, [validator])
 
   const loadValidator = async () => {
     if (!address) return
@@ -124,20 +192,75 @@ export default function UnjailPage() {
         </div>
       ) : (
         <>
-          {!validator.jailed && (
+          {!validator.jailed && !infoDismissed && (
             <TransactionStatus 
               status={{
                 status: 'info',
                 info: 'Your validator is not jailed. Unjail is only available for jailed validators.',
               }}
               explorerUrl={explorerUrl}
+              inline={true}
+              onDismiss={() => setInfoDismissed(true)}
             />
           )}
-          <div className="info-section" style={{ marginTop: '1.5rem', marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
-            <h3>Validator Status</h3>
-            <p>Status: {validator.status}</p>
-            <p>Jailed: {validator.jailed ? 'Yes' : 'No'}</p>
-            <p>Moniker: {validator.moniker || 'N/A'}</p>
+          <div className="validator-info" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+            <div className="info-section">
+              <h3>Status</h3>
+              <Link to="/status" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="validator-profile-header" style={{ cursor: 'pointer' }}>
+                  <div className="profile-picture-container">
+                    {profileImageUrl && !profileImageError ? (
+                      <img
+                        src={profileImageUrl}
+                        alt={`${validator.moniker} profile`}
+                        className="profile-picture"
+                        onError={() => setProfileImageError(true)}
+                      />
+                    ) : (
+                      <div className="profile-picture-default">
+                        {validator.moniker
+                          ? (() => {
+                              const words = validator.moniker.trim().split(/\s+/)
+                              if (words.length >= 2) {
+                                return (words[0][0] + words[1][0]).toUpperCase()
+                              }
+                              return validator.moniker.substring(0, 2).toUpperCase()
+                            })()
+                          : 'V'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="validator-profile-info">
+                    <div className="info-item">
+                      <span className="info-label">Moniker</span>
+                      <span className="info-value">{validator.moniker || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+              <div className="info-grid" style={{ marginTop: '1rem' }}>
+                <div className="info-item">
+                  <span className="info-label">Status</span>
+                  <span className="info-value">
+                    {(() => {
+                      if (validator.jailed) {
+                        return <span className="status-badge status-badge-warning">Jailed</span>
+                      }
+                      if (validator.status === 'BOND_STATUS_BONDED') {
+                        return <span className="status-badge status-badge-success">Active</span>
+                      }
+                      return <span className="status-badge status-badge-info">{validator.status.replace('BOND_STATUS_', '')}</span>
+                    })()}
+                  </span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Jailed</span>
+                  <span className={`info-value ${validator.jailed ? 'status-jailed' : 'status-active'}`}>
+                    {validator.jailed ? 'Yes' : 'No'}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {validator.jailed ? (
@@ -169,6 +292,7 @@ export default function UnjailPage() {
             <TransactionStatus 
               status={txStatus} 
               explorerUrl={explorerUrl}
+              onDismiss={() => setTxStatus({ status: 'idle' })}
             />
           )}
         </>

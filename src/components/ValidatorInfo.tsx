@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { ValidatorInfo as ValidatorInfoType, OrchestratorMapping } from '../types'
 import { formatTokenAmount } from '../utils/format'
 
@@ -21,58 +22,238 @@ export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInf
   const delegatorSharesFormatted = formatTokenAmount(validator.delegatorShares, 18, 4)
   const minSelfDelegationFormatted = formatTokenAmount(validator.minSelfDelegation, 18, 4)
 
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
+  const [profileImageError, setProfileImageError] = useState(false)
+  
+  // Load Keybase profile picture
+  useEffect(() => {
+    const loadKeybasePicture = async () => {
+      if (!validator.identity || validator.identity.trim() === '') {
+        setProfileImageUrl(null)
+        setProfileImageError(false)
+        return
+      }
+
+      const identity = validator.identity.trim()
+      console.log('[ValidatorInfo] Loading Keybase picture for identity:', identity)
+      
+      try {
+        // For Cosmos validators, identity is typically a Keybase identity hash (16-char hex)
+        // Use the lookup API with key_suffix parameter
+        const lookupUrl = `https://keybase.io/_/api/1.0/user/lookup.json?key_suffix=${identity}&fields=pictures`
+        console.log('[ValidatorInfo] Fetching Keybase lookup API:', lookupUrl)
+        const response = await fetch(lookupUrl)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('[ValidatorInfo] Keybase lookup API response:', data)
+          
+          // Check if we got a valid user
+          if (data.status?.code === 0 && data.them && data.them.length > 0) {
+            const user = data.them[0]
+            // Try to get the picture URL from various possible locations
+            const pictureUrl = 
+              user.pictures?.primary?.url ||
+              user.pictures?.primary?.basename ||
+              (user.pictures?.primary && `https://keybase.io/${user.basename}/picture`)
+            
+            if (pictureUrl) {
+              console.log('[ValidatorInfo] Found Keybase picture URL:', pictureUrl)
+              setProfileImageUrl(pictureUrl)
+              setProfileImageError(false)
+              return
+            }
+          }
+        }
+        
+        // Fallback: try direct picture URL format (for usernames)
+        console.log('[ValidatorInfo] Lookup API failed, trying direct URL')
+        const directUrl = `https://keybase.io/${identity}/picture`
+        
+        // Test if image exists by creating an image element
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => {
+          console.log('[ValidatorInfo] Direct URL loaded successfully:', directUrl)
+          setProfileImageUrl(directUrl)
+          setProfileImageError(false)
+        }
+        img.onerror = () => {
+          console.log('[ValidatorInfo] All Keybase methods failed')
+          setProfileImageUrl(null)
+          setProfileImageError(true)
+        }
+        img.src = directUrl
+      } catch (error) {
+        console.error('[ValidatorInfo] Failed to load Keybase picture:', error)
+        setProfileImageUrl(null)
+        setProfileImageError(true)
+      }
+    }
+
+    loadKeybasePicture()
+  }, [validator.identity])
+  
+  const getStatusBadge = () => {
+    if (validator.slashingInfo?.tombstoned) {
+      return <span className="status-badge status-badge-error">Tombstoned</span>
+    }
+    if (validator.jailed) {
+      return <span className="status-badge status-badge-warning">Jailed</span>
+    }
+    if (validator.status === 'BOND_STATUS_BONDED') {
+      return <span className="status-badge status-badge-success">Active</span>
+    }
+    return <span className="status-badge status-badge-info">{validator.status.replace('BOND_STATUS_', '')}</span>
+  }
+
+  const getDefaultProfileInitials = () => {
+    if (validator.moniker) {
+      // Get first letter of each word in moniker, up to 2 letters
+      const words = validator.moniker.trim().split(/\s+/)
+      if (words.length >= 2) {
+        return (words[0][0] + words[1][0]).toUpperCase()
+      }
+      return validator.moniker.substring(0, 2).toUpperCase()
+    }
+    return 'V'
+  }
+
+  const showProfilePicture = profileImageUrl !== null && !profileImageError
+
   return (
-    <>
-      <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+    <div className="validator-info">
+      <div className="info-section">
         <h3>Basic Info</h3>
-        <p><strong>Moniker:</strong> {validator.moniker}</p>
-        <p><strong>Operator Address:</strong> {validator.operatorAddress}</p>
-        {validator.identity && <p><strong>Identity:</strong> {validator.identity}</p>}
-        {validator.website && <p><strong>Website:</strong> <a href={validator.website} target="_blank" rel="noopener noreferrer">{validator.website}</a></p>}
-        {validator.details && <p><strong>Details:</strong> {validator.details}</p>}
+        <div className="validator-profile-header">
+          <div className="profile-picture-container">
+            {showProfilePicture && profileImageUrl ? (
+              <img
+                src={profileImageUrl}
+                alt={`${validator.moniker} profile`}
+                className="profile-picture"
+                onError={() => setProfileImageError(true)}
+              />
+            ) : (
+              <div className="profile-picture-default">
+                {getDefaultProfileInitials()}
+              </div>
+            )}
+          </div>
+          <div className="validator-profile-info">
+            <div className="info-item">
+              <span className="info-label">Moniker</span>
+              <span className="info-value">{validator.moniker}</span>
+            </div>
+            {validator.identity && (
+              <div className="info-item">
+                <span className="info-label">Identity</span>
+                <span className="info-value">{validator.identity}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="info-label">Operator Address</span>
+            <span className="info-value address-value">{validator.operatorAddress}</span>
+          </div>
+          {validator.website && (
+            <div className="info-item">
+              <span className="info-label">Website</span>
+              <span className="info-value">
+                <a href={validator.website} target="_blank" rel="noopener noreferrer">{validator.website}</a>
+              </span>
+            </div>
+          )}
+          {validator.details && (
+            <div className="info-item">
+              <span className="info-label">Details</span>
+              <span className="info-value">{validator.details}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+      <div className="info-section">
         <h3>Status</h3>
-        <p><strong>Status:</strong> {validator.status}</p>
-        <p><strong>Jailed:</strong> {validator.jailed ? 'Yes' : 'No'}</p>
-        {validator.jailed && validator.slashingInfo?.jailedUntil && (
-          <p><strong>Jailed Until:</strong> {new Date(validator.slashingInfo.jailedUntil).toLocaleString()}</p>
-        )}
-        {validator.slashingInfo?.tombstoned && (
-          <p style={{ color: '#ff6b6b' }}><strong>Tombstoned:</strong> Yes (Validator is permanently banned)</p>
-        )}
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="info-label">Status</span>
+            <span className="info-value">{getStatusBadge()}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Jailed</span>
+            <span className={`info-value ${validator.jailed ? 'status-jailed' : 'status-active'}`}>
+              {validator.jailed ? 'Yes' : 'No'}
+            </span>
+          </div>
+          {validator.jailed && validator.slashingInfo?.jailedUntil && (
+            <div className="info-item">
+              <span className="info-label">Jailed Until</span>
+              <span className="info-value">{new Date(validator.slashingInfo.jailedUntil).toLocaleString()}</span>
+            </div>
+          )}
+          {validator.slashingInfo?.tombstoned && (
+            <div className="info-item">
+              <span className="info-label">Tombstoned</span>
+              <span className="info-value status-error">Yes (Validator is permanently banned)</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+      <div className="info-section">
         <h3>Staking</h3>
-        <p><strong>Tokens:</strong> {tokensFormatted} INJ</p>
-        <p><strong>Delegator Shares:</strong> {delegatorSharesFormatted}</p>
-        <p><strong>Min Self Delegation:</strong> {minSelfDelegationFormatted} INJ</p>
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="info-label">Tokens</span>
+            <span className="info-value highlight-value">{tokensFormatted} INJ</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Delegator Shares</span>
+            <span className="info-value highlight-value">{delegatorSharesFormatted}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Min Self Delegation</span>
+            <span className="info-value highlight-value">{minSelfDelegationFormatted} INJ</span>
+          </div>
+        </div>
       </div>
 
-      <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+      <div className="info-section">
         <h3>Commission</h3>
-        <p><strong>Rate:</strong> {(parseFloat(validator.commission.rate) * 100).toFixed(2)}%</p>
-        <p><strong>Max Rate:</strong> {(parseFloat(validator.commission.maxRate) * 100).toFixed(2)}%</p>
-        <p><strong>Max Change Rate:</strong> {(parseFloat(validator.commission.maxChangeRate) * 100).toFixed(2)}%</p>
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="info-label">Rate</span>
+            <span className="info-value highlight-value">{(parseFloat(validator.commission.rate) * 100).toFixed(2)}%</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Max Rate</span>
+            <span className="info-value">{(parseFloat(validator.commission.maxRate) * 100).toFixed(2)}%</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Max Change Rate</span>
+            <span className="info-value">{(parseFloat(validator.commission.maxChangeRate) * 100).toFixed(2)}%</span>
+          </div>
+        </div>
       </div>
 
       {orchestrator && (
-        <div className="info-section" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+        <div className="info-section">
           <h3>Orchestrator</h3>
-          <p style={{ marginTop: '0.5rem' }}>
-            <strong>Orchestrator Address:</strong>
-            <br />
-            <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{orchestrator.orchestratorAddress}</span>
-          </p>
-          <p style={{ marginTop: '0.5rem' }}>
-            <strong>Ethereum Address:</strong>
-            <br />
-            <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{orchestrator.ethereumAddress}</span>
-          </p>
+          <div className="info-grid">
+            <div className="info-item info-item-full">
+              <span className="info-label">Orchestrator Address</span>
+              <span className="info-value address-value">{orchestrator.orchestratorAddress}</span>
+            </div>
+            <div className="info-item info-item-full">
+              <span className="info-label">Ethereum Address</span>
+              <span className="info-value address-value">{orchestrator.ethereumAddress}</span>
+            </div>
+          </div>
         </div>
       )}
-    </>
+    </div>
   )
 }

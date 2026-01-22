@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { delegationSchema, DelegationFormData } from '../utils/validation'
@@ -12,6 +13,8 @@ interface UndelegateFormProps {
 }
 
 export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, currentDelegation, validator }: UndelegateFormProps) {
+  const [warningDismissed, setWarningDismissed] = useState(false)
+  
   const {
     register,
     handleSubmit,
@@ -29,16 +32,11 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
   const amount = useWatch({ control, name: 'amount' })
 
   const handleMaxClick = () => {
-    if (currentDelegation && currentDelegation.balance && validator) {
-      // Calculate max undelegation: current delegation - min self delegation
-      const currentDelegationInInj = parseFloat(currentDelegation.balance.amount) / 1e18
-      const minSelfDelegationInInj = parseFloat(validator.minSelfDelegation) / 1e18
-      const maxUndelegation = Math.max(0, currentDelegationInInj - minSelfDelegationInInj)
-      setValue('amount', maxUndelegation.toFixed(4))
-    } else if (currentDelegation && currentDelegation.balance) {
-      // If no validator info, just use current delegation
+    if (currentDelegation && currentDelegation.balance) {
+      // Set to full delegation amount (allow unbonding all)
       const balanceInInj = parseFloat(currentDelegation.balance.amount) / 1e18
       setValue('amount', balanceInInj.toFixed(4))
+      setWarningDismissed(false) // Show warning when MAX is clicked
     }
   }
 
@@ -67,7 +65,8 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
     <form onSubmit={handleSubmit(onSubmit)} className="undelegate-form">
       <h3>Undelegate</h3>
 
-      <div className="form-group">
+      <div className="form-section">
+        <div className="form-group">
         <label>
           Validator Address:
           <input
@@ -84,41 +83,32 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
       <div className="form-group">
         <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Amount (INJ):</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <span style={{ color: '#aaa' }}>Delegated: {currentDelegationInInj} INJ</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>Delegated: {currentDelegationInInj} INJ</span>
             <button
               type="button"
               onClick={handleMaxClick}
               disabled={!currentDelegation || parseFloat(currentDelegationInInj) === 0}
-              style={{
-                padding: '0.25rem 0.5rem',
-                fontSize: '0.75rem',
-                backgroundColor: currentDelegation && parseFloat(currentDelegationInInj) > 0 ? '#4a9eff' : '#666',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: currentDelegation && parseFloat(currentDelegationInInj) > 0 ? 'pointer' : 'not-allowed',
-                opacity: currentDelegation && parseFloat(currentDelegationInInj) > 0 ? 1 : 0.5,
-              }}
+              className="max-button-link"
             >
-              Max
+              MAX
             </button>
-          </div>
+          </span>
         </label>
         <input {...register('amount')} type="number" step="0.001" min="0" />
         {errors.amount && (
           <span className="error">{errors.amount.message}</span>
         )}
-        {wouldViolateMinSelfDelegation && (
-          <div style={{ 
-            marginTop: '0.5rem', 
-            padding: '0.75rem', 
-            backgroundColor: '#ff6b6b20', 
-            border: '1px solid #ff6b6b', 
-            borderRadius: '4px',
-            color: '#ff6b6b'
-          }}>
-            <strong>⚠️ Warning:</strong> Unbonding this amount would violate the minimum self-delegation requirement.
+        {wouldViolateMinSelfDelegation && !warningDismissed && (
+          <div className="warning-box undelegate-warning" style={{ marginTop: '0.75rem', position: 'relative', paddingRight: '2.5rem' }}>
+            <button 
+              className="transaction-status-close-inline" 
+              onClick={() => setWarningDismissed(true)} 
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <strong>Warning:</strong> Unbonding this amount would violate the minimum self-delegation requirement.
             <br /><br />
             Current self-delegation: {currentDelegationInInj} INJ
             <br />
@@ -129,9 +119,10 @@ export function UndelegateForm({ validatorAddress, onSubmit, isSubmitting, curre
             <strong>If you proceed, the validator will be jailed.</strong>
           </div>
         )}
+        </div>
       </div>
 
-      <button type="submit" disabled={isSubmitting || wouldViolateMinSelfDelegation}>
+      <button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Submitting...' : 'Undelegate'}
       </button>
     </form>
