@@ -66,18 +66,22 @@ export default function ValidatorEditPage() {
         validator.commission.rate
       )
       
+      console.log('[ValidatorEditPage] Transaction result:', result)
+      
       // Only proceed if transaction succeeded (code 0)
       // The transaction function will throw if it failed, so if we get here, it succeeded
       if (result.transactionHash) {
+        console.log('[ValidatorEditPage] Setting success status with hash:', result.transactionHash)
         setTxStatus({ 
           status: 'success', 
           hash: result.transactionHash,
-          rawLog: (result as any).rawLog,
+          rawLog: (result as any).rawLog || (result as any).txResponse?.rawLog,
         })
         
         // Reload validator info
         await loadValidator()
       } else {
+        console.error('[ValidatorEditPage] No transaction hash in result:', result)
         throw new Error('Transaction completed but no transaction hash was returned')
       }
     } catch (error: any) {

@@ -14,6 +14,13 @@ export function TransactionStatus({ status, explorerUrl, onDismiss, inline = fal
   const { network } = useNetwork()
   const [isVisible, setIsVisible] = useState(true)
   
+  // Reset visibility when status changes
+  useEffect(() => {
+    if (status.status !== 'idle') {
+      setIsVisible(true)
+    }
+  }, [status.status, status.hash, status.error])
+  
   // Auto-dismiss overlay boxes after 20 seconds (not inline ones)
   useEffect(() => {
     if (inline) {
@@ -27,7 +34,7 @@ export function TransactionStatus({ status, explorerUrl, onDismiss, inline = fal
         if (onDismiss) {
           setTimeout(onDismiss, 300) // Wait for animation
         }
-      }, 10000) // 10 seconds
+      }, 20000) // 20 seconds
       return () => clearTimeout(timer)
     }
   }, [status.status, inline, onDismiss])

@@ -11,6 +11,7 @@ import { BinaryWriter } from '@interchainjs/cosmos-types/binary'
 import { Any } from '@interchainjs/cosmos-types/google/protobuf/any'
 import { Coin } from '@interchainjs/cosmos-types/cosmos/base/v1beta1/coin'
 import { Description, CommissionRates } from '@interchainjs/cosmos-types/cosmos/staking/v1beta1/staking'
+import { Decimal } from '@interchainjs/math'
 
 // Re-export DirectSigner type for consistency with @interchainjs/injective API
 // This ensures we're using the Injective-compatible signer with proper type handling
@@ -162,10 +163,14 @@ export async function createInjectiveSigner(
           w.uint32(18).string(message.validatorAddress)
         }
         
-        // Field 3: commission_rate (string) - optional
+        // Field 3: commission_rate (Dec) - optional
+        // Commission rate must be encoded as Decimal atomics (18 decimal places)
         if (message.commissionRate !== undefined && message.commissionRate !== null && message.commissionRate !== '') {
           console.log('[ENCODER] Encoding commissionRate:', message.commissionRate)
-          w.uint32(26).string(message.commissionRate)
+          // Convert decimal string to atomics format (e.g., "0.11" -> "110000000000000000")
+          const commissionRateAtomics = Decimal.fromUserInput(message.commissionRate, 18).atomics
+          console.log('[ENCODER] Commission rate atomics:', commissionRateAtomics)
+          w.uint32(26).string(commissionRateAtomics)
         }
         
         // Field 4: min_self_delegation (string) - optional
