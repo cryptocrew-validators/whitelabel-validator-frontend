@@ -3,7 +3,7 @@ import { useChain } from '@cosmos-kit/react'
 import { OrchestratorForm } from '../components/OrchestratorForm'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { OrchestratorRegistrationFormData } from '../utils/validation'
-import { TransactionStatus as TxStatus, ValidatorInfo } from '../types'
+import { TransactionStatus as TxStatus, ValidatorInfo, OrchestratorMapping } from '../types'
 import { registerOrchestratorTransaction } from '../services/transactions'
 import { useNetwork } from '../contexts/NetworkContext'
 import { createInjectiveSigner } from '../utils/injective-signer'
@@ -15,11 +15,14 @@ export default function OrchestratorRegistrationPage() {
   const { network } = useNetwork()
   const [orchestratorTxStatus, setOrchestratorTxStatus] = useState<TxStatus>({ status: 'idle' })
   const [validator, setValidator] = useState<ValidatorInfo | null>(null)
+  const [existingOrchestrator, setExistingOrchestrator] = useState<OrchestratorMapping | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingOrchestrator, setLoadingOrchestrator] = useState(false)
 
   useEffect(() => {
     if (address) {
       loadValidator()
+      loadOrchestrator()
     }
   }, [address, network])
 
@@ -38,6 +41,22 @@ export default function OrchestratorRegistrationPage() {
       setValidator(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadOrchestrator = async () => {
+    if (!address) return
+    
+    setLoadingOrchestrator(true)
+    try {
+      const queryService = new QueryService(network)
+      const orchestratorInfo = await queryService.getOrchestratorBySender(address)
+      setExistingOrchestrator(orchestratorInfo)
+    } catch (error) {
+      console.error('Failed to load orchestrator:', error)
+      setExistingOrchestrator(null)
+    } finally {
+      setLoadingOrchestrator(false)
     }
   }
 
@@ -68,6 +87,9 @@ export default function OrchestratorRegistrationPage() {
           hash: result.transactionHash,
           rawLog: (result as any).rawLog,
         })
+        
+        // Reload orchestrator info after successful registration
+        await loadOrchestrator()
       } else {
         throw new Error('Transaction completed but no transaction hash was returned')
       }
@@ -95,12 +117,42 @@ export default function OrchestratorRegistrationPage() {
         <div className="error-message">
           Please connect your wallet to register an orchestrator.
         </div>
-      ) : loading ? (
+      ) : loading || loadingOrchestrator ? (
         <div>Loading validator information...</div>
       ) : !validator ? (
         <div className="error-message">
           No validator found for the connected wallet. Please ensure you're connected with a validator operator wallet that has registered a validator.
         </div>
+      ) : existingOrchestrator ? (
+        <>
+          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Validator Operator Address</h3>
+            <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{validator.operatorAddress}</p>
+          </div>
+          <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
+            <h3>Registered Orchestrator</h3>
+            <p style={{ color: '#4CAF50', marginBottom: '0.5rem' }}>
+              An orchestrator has already been registered for this wallet.
+            </p>
+            <p style={{ marginTop: '0.5rem' }}>
+              <strong>Orchestrator Address:</strong>
+              <br />
+              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingOrchestrator.orchestratorAddress}</span>
+            </p>
+            <p style={{ marginTop: '0.5rem' }}>
+              <strong>Ethereum Address:</strong>
+              <br />
+              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{existingOrchestrator.ethereumAddress}</span>
+            </p>
+            <p style={{ marginTop: '1rem', color: '#aaa', fontSize: '0.9em' }}>
+              Note: Orchestrator addresses cannot be changed once registered.
+            </p>
+          </div>
+          <TransactionStatus 
+            status={orchestratorTxStatus} 
+            explorerUrl={explorerUrl}
+          />
+        </>
       ) : (
         <>
           <div className="info-section" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
@@ -114,7 +166,6 @@ export default function OrchestratorRegistrationPage() {
           <TransactionStatus 
             status={orchestratorTxStatus} 
             explorerUrl={explorerUrl}
-            network={network}
           />
         </>
       )}

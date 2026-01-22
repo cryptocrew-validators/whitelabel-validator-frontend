@@ -98,6 +98,94 @@ export class QueryService {
     }
   }
 
+  async getOrchestratorBySender(senderAddress: string): Promise<OrchestratorMapping | null> {
+    try {
+      // Try multiple possible endpoints for orchestrator queries
+      // First, try the module state endpoint
+      const moduleStateUrl = `${this.restEndpoint}/peggy/v1/module_state`
+      const moduleStateResponse = await fetch(moduleStateUrl)
+      
+      if (moduleStateResponse.ok) {
+        const moduleStateData = await moduleStateResponse.json()
+        console.log('[QUERY] Orchestrator module state:', JSON.stringify(moduleStateData, null, 2))
+        
+        // Check various possible locations for orchestrator data
+        const orchestrators = 
+          moduleStateData.state?.orchestrators || 
+          moduleStateData.orchestrators || 
+          moduleStateData.state?.orchestrator_addresses ||
+          []
+        
+        // Find the orchestrator mapping where sender matches
+        const mapping = orchestrators.find((m: any) => 
+          m.sender && m.sender.toLowerCase() === senderAddress.toLowerCase()
+        )
+        
+        if (mapping) {
+          console.log('[QUERY] Found orchestrator mapping in module state:', mapping)
+          return {
+            validatorAddress: mapping.sender || senderAddress,
+            orchestratorAddress: mapping.orchestrator || '',
+            ethereumAddress: mapping.eth_address || mapping.ethereum || mapping.ethereum_address || '',
+          }
+        }
+      }
+      
+      // Try a direct orchestrator query endpoint
+      try {
+        const orchestratorUrl = `${this.restEndpoint}/peggy/v1/orchestrator/${senderAddress}`
+        const orchestratorResponse = await fetch(orchestratorUrl)
+        
+        if (orchestratorResponse.ok) {
+          const orchestratorData = await orchestratorResponse.json()
+          console.log('[QUERY] Orchestrator query response:', JSON.stringify(orchestratorData, null, 2))
+          
+          if (orchestratorData.orchestrator || orchestratorData.eth_address) {
+            return {
+              validatorAddress: senderAddress,
+              orchestratorAddress: orchestratorData.orchestrator || '',
+              ethereumAddress: orchestratorData.eth_address || orchestratorData.ethereum || '',
+            }
+          }
+        }
+      } catch (orchestratorError) {
+        console.log('[QUERY] Orchestrator endpoint not available, trying alternative...')
+      }
+      
+      // Try querying all orchestrators and filtering
+      try {
+        const allOrchestratorsUrl = `${this.restEndpoint}/peggy/v1/orchestrators`
+        const allOrchestratorsResponse = await fetch(allOrchestratorsUrl)
+        
+        if (allOrchestratorsResponse.ok) {
+          const allOrchestratorsData = await allOrchestratorsResponse.json()
+          console.log('[QUERY] All orchestrators response:', JSON.stringify(allOrchestratorsData, null, 2))
+          
+          const orchestratorsList = allOrchestratorsData.orchestrators || allOrchestratorsData || []
+          const mapping = orchestratorsList.find((m: any) => 
+            m.sender && m.sender.toLowerCase() === senderAddress.toLowerCase()
+          )
+          
+          if (mapping) {
+            console.log('[QUERY] Found orchestrator mapping in all orchestrators:', mapping)
+            return {
+              validatorAddress: mapping.sender || senderAddress,
+              orchestratorAddress: mapping.orchestrator || '',
+              ethereumAddress: mapping.eth_address || mapping.ethereum || mapping.ethereum_address || '',
+            }
+          }
+        }
+      } catch (allOrchestratorsError) {
+        console.log('[QUERY] All orchestrators endpoint not available')
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Error fetching orchestrator by sender:', error)
+      return null
+    }
+  }
+
   async getDelegation(delegatorAddress: string, validatorAddress: string): Promise<DelegationInfo | null> {
     try {
       // Use REST API: GET /cosmos/staking/v1beta1/validators/{validator_addr}/delegations/{delegator_addr}
