@@ -43,12 +43,13 @@ export function getCachedKeybaseImage(identity: string): string | null {
  * Cache a profile image URL for an identity
  */
 export function setCachedKeybaseImage(identity: string, url: string): void {
+  const cacheKey = `${CACHE_PREFIX}${identity}`
+  const entry: CacheEntry = {
+    url,
+    timestamp: Date.now(),
+  }
+  
   try {
-    const cacheKey = `${CACHE_PREFIX}${identity}`
-    const entry: CacheEntry = {
-      url,
-      timestamp: Date.now(),
-    }
     localStorage.setItem(cacheKey, JSON.stringify(entry))
   } catch (error) {
     console.error('[KeybaseCache] Error writing cache:', error)
