@@ -155,7 +155,7 @@ function AppContent() {
             <div className="app">
               <nav className="navigation">
                 <Link to="/" className="logo-link">
-                  <img src="/ccvalidators_logo.png" alt="CryptoCrew Validators" className="logo-image" />
+                  <img src={`${import.meta.env.BASE_URL}ccvalidators_logo.png`} alt="CryptoCrew Validators" className="logo-image" />
                 </Link>
                 <Link to="/">Register Validator</Link>
                 <Link to="/orchestrator">Register Orchestrator</Link>
