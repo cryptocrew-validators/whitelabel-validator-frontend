@@ -9,31 +9,19 @@ interface ValidatorInfoProps {
 }
 
 export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInfoProps) {
-  if (loading) {
-    return <div>Loading validator information...</div>
-  }
-
-  if (!validator) {
-    return <div>Validator not found</div>
-  }
-
-  // Format token amounts with 18 decimals
-  const tokensFormatted = formatTokenAmount(validator.tokens, 18, 4)
-  const delegatorSharesFormatted = formatTokenAmount(validator.delegatorShares, 18, 4)
-  const minSelfDelegationFormatted = formatTokenAmount(validator.minSelfDelegation, 18, 4)
-
+  // Hooks must be called before any early returns
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
   const [profileImageError, setProfileImageError] = useState(false)
   
   // Load Keybase profile picture with caching
   useEffect(() => {
-    const loadKeybasePicture = async () => {
-      if (!validator.identity || validator.identity.trim() === '') {
-        setProfileImageUrl(null)
-        setProfileImageError(false)
-        return
-      }
+    if (!validator || !validator.identity || validator.identity.trim() === '') {
+      setProfileImageUrl(null)
+      setProfileImageError(false)
+      return
+    }
 
+    const loadKeybasePicture = async () => {
       const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
       const pictureUrl = await loadCachedPicture(validator.identity)
       
@@ -47,7 +35,20 @@ export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInf
     }
 
     loadKeybasePicture()
-  }, [validator.identity])
+  }, [validator?.identity])
+
+  if (loading) {
+    return <div>Loading validator information...</div>
+  }
+
+  if (!validator) {
+    return <div>Validator not found</div>
+  }
+
+  // Format token amounts with 18 decimals
+  const tokensFormatted = formatTokenAmount(validator.tokens, 18, 4)
+  const delegatorSharesFormatted = formatTokenAmount(validator.delegatorShares, 18, 4)
+  const minSelfDelegationFormatted = formatTokenAmount(validator.minSelfDelegation, 18, 4)
   
   const getStatusBadge = () => {
     if (validator.slashingInfo?.tombstoned) {
