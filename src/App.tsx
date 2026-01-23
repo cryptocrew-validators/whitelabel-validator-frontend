@@ -151,7 +151,7 @@ function AppContent() {
             },
           }}
         >
-          <BrowserRouter>
+          <BrowserRouter basename={import.meta.env.BASE_URL}>
             <div className="app">
               <nav className="navigation">
                 <Link to="/" className="logo-link">
