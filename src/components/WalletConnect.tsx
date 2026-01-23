@@ -3,10 +3,8 @@ import { BalanceDisplay } from './BalanceDisplay'
 
 export function WalletConnect() {
   const { 
-    connect, 
     disconnect, 
     isWalletConnected, 
-    wallet, 
     address, 
     status,
     openView 

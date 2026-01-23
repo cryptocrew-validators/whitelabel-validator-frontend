@@ -91,7 +91,7 @@ export function BalanceDisplay({ onDisconnect, isDisconnecting }: BalanceDisplay
     }
   }
 
-  const copyToClipboard = async (text: string, type: string) => {
+  const copyToClipboard = async (text: string, _type: string) => {
     try {
       await navigator.clipboard.writeText(text)
       // You could add a toast notification here if desired

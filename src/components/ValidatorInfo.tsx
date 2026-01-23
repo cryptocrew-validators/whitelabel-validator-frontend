@@ -22,6 +22,8 @@ export function ValidatorInfo({ validator, orchestrator, loading }: ValidatorInf
     }
 
     const loadKeybasePicture = async () => {
+      if (!validator?.identity) return
+      
       const { loadKeybasePicture: loadCachedPicture } = await import('../utils/keybase-cache')
       const pictureUrl = await loadCachedPicture(validator.identity)
       
