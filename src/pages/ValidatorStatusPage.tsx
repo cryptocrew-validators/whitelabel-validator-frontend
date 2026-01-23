@@ -12,7 +12,6 @@ export default function ValidatorStatusPage() {
   const [validator, setValidator] = useState<ValidatorInfoType | null>(null)
   const [orchestrator, setOrchestrator] = useState<OrchestratorMapping | null>(null)
   const [loading, setLoading] = useState(false)
-  const [validatorAddress, setValidatorAddress] = useState<string>('')
 
   useEffect(() => {
     if (address) {
@@ -40,16 +39,13 @@ export default function ValidatorStatusPage() {
           validatorInfo.slashingParams = slashingParams
         }
         setValidator(validatorInfo)
-        setValidatorAddress(derivedValidatorAddress)
       } else {
         setValidator(null)
-        setValidatorAddress('')
       }
       setOrchestrator(orchestratorInfo)
     } catch (error) {
       console.error('Failed to load validator info:', error)
       setValidator(null)
-      setValidatorAddress('')
     } finally {
       setLoading(false)
     }
