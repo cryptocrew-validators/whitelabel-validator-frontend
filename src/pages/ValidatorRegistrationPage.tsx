@@ -113,7 +113,12 @@ export default function ValidatorRegistrationPage() {
           rawLog: (result as any).rawLog,
         })
         // Refresh validator check to get the newly registered validator info
+        // Add a small delay to ensure the validator is indexed on-chain
+        await new Promise(resolve => setTimeout(resolve, 2000))
         await checkExistingValidator()
+        
+        // Trigger refresh of validator address in BalanceDisplay
+        window.dispatchEvent(new CustomEvent('validator-registered'))
       } else {
         throw new Error('Transaction completed but no transaction hash was returned')
       }
@@ -144,7 +149,7 @@ export default function ValidatorRegistrationPage() {
         </div>
       ) : loadingValidator ? (
         <div>Checking for existing validator...</div>
-      ) : existingValidator && validatorTxStatus.status !== 'success' ? (
+      ) : existingValidator ? (
         <>
           {!warningDismissed && (
             <TransactionStatus 

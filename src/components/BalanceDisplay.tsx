@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useChain } from '@cosmos-kit/react'
 import { useNetwork } from '../contexts/NetworkContext'
 import { getChainConfig } from '../config/chains'
@@ -17,18 +17,7 @@ export function BalanceDisplay({ onDisconnect, isDisconnecting }: BalanceDisplay
   const [loading, setLoading] = useState(false)
   const [validatorOperatorAddress, setValidatorOperatorAddress] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Only load balance when wallet is connected and ready
-    if (address && status === 'Connected') {
-      loadBalance()
-      loadValidator()
-    } else {
-      setBalance('0')
-      setValidatorOperatorAddress(null)
-    }
-  }, [address, status, network])
-
-  const loadValidator = async () => {
+  const loadValidator = useCallback(async () => {
     if (!address) return
     
     try {
@@ -45,9 +34,9 @@ export function BalanceDisplay({ onDisconnect, isDisconnecting }: BalanceDisplay
       // Silently handle validator loading errors
       setValidatorOperatorAddress(null)
     }
-  }
+  }, [address, network])
 
-  const loadBalance = async () => {
+  const loadBalance = useCallback(async () => {
     if (!address) return
     
     setLoading(true)
@@ -89,7 +78,35 @@ export function BalanceDisplay({ onDisconnect, isDisconnecting }: BalanceDisplay
     } finally {
       setLoading(false)
     }
-  }
+  }, [address, network])
+
+  useEffect(() => {
+    // Only load balance when wallet is connected and ready
+    if (address && status === 'Connected') {
+      loadBalance()
+      loadValidator()
+    } else {
+      setBalance('0')
+      setValidatorOperatorAddress(null)
+    }
+  }, [address, status, network, loadValidator, loadBalance])
+
+  // Listen for validator registration events to refresh validator address
+  useEffect(() => {
+    const handleValidatorRegistered = () => {
+      if (address && status === 'Connected') {
+        // Add a small delay to ensure the validator is indexed
+        setTimeout(() => {
+          loadValidator()
+        }, 1000)
+      }
+    }
+
+    window.addEventListener('validator-registered', handleValidatorRegistered)
+    return () => {
+      window.removeEventListener('validator-registered', handleValidatorRegistered)
+    }
+  }, [address, status, loadValidator])
 
   const copyToClipboard = async (text: string, _type: string) => {
     try {
