@@ -55,5 +55,8 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-node-polyfills": "^0.25.0"
+  },
+  "overrides": {
+    "bn.js": "^5.2.3"
   }
 }
